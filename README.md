@@ -1,0 +1,2 @@
+# Projet Comptage Evenementiel
+ Ce projet consiste en la conception et la réalisation d’un système de comptage événementiel destiné aux concerts et événements gratuits sans billetterie. L’objectif est d’estimer en temps réel le nombre de personnes présentes sur un site, afin de garantir la sécurité du public et de fournir des informations fiables aux organisateurs, aux services de sécurité et aux autorités.
