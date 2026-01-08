@@ -1,173 +1,217 @@
 <template>
-  <div class="app">
-    <h1>Supervision Comptage Événementiel</h1>
+  <div class="dashboard">
+    <header>
+      <h1>Supervision – Comptage</h1>
+      <span class="status-battery" :class="statusBatteryClass">{{ batteryStatus }}</span>
+      <span class="status-people" :class="capacityIndicatorClass">{{ peopleStatus }}</span>
+    </header>
 
-    <div class="grid">
-      <div class="card">
-        <h2>Personnes présentes</h2>
-        <p>{{ data.currentPeople }}</p>
+    <section class="cards">
+      <div class="card highlight">
+        <h3>Présents</h3>
+        <p>{{ people }}</p>
       </div>
 
       <div class="card">
-        <h2>Entrées</h2>
-        <p>{{ data.entries }}</p>
+        <h3>Entrées</h3>
+        <p>{{ entries }}</p>
       </div>
 
       <div class="card">
-        <h2>Sorties</h2>
-        <p>{{ data.exits }}</p>
+        <h3>Sorties</h3>
+        <p>{{ exits }}</p>
       </div>
 
       <div class="card">
-        <h2>Batterie</h2>
-        <p>{{ data.battery }}%</p>
+        <h3>Batterie</h3>
+        <p>{{ battery }}%</p>
       </div>
 
-      <div class="card">
-        <h2>État système</h2>
-        <p :class="statusClass">{{ data.status }}</p>
+      <!-- Carte capacité max -->
+      <div class="card capacity-card">
+        <h3>Capacité max</h3>
+        <div class="capacity-container">
+          <span class="capacity-indicator" :class="capacityIndicatorClass"></span>
+          <input type="number" v-model.number="maxPeople" min="1" class="transparent-input" />
+        </div>
       </div>
-    </div>
+    </section>
 
-    <h2>Graphique des personnes présentes</h2>
-    <canvas ref="chart"></canvas>
+    <PeopleChart ref="chartRef" />
 
-    <small>Dernière mise à jour : {{ data.timestamp }}</small>
+    <footer>
+      MAJ : {{ timestamp }}
+    </footer>
   </div>
 </template>
 
 <script setup>
-import { reactive, onMounted, onUnmounted, computed, ref } from 'vue'
-import { Chart, LineController, LineElement, PointElement, LinearScale, Title, CategoryScale } from 'chart.js'
+import { ref, computed, onMounted } from 'vue'
+import PeopleChart from './components/PeopleChart.vue'
 
-// --- CONFIG CHART.JS ---
-Chart.register(LineController, LineElement, PointElement, LinearScale, Title, CategoryScale)
-const chart = ref(null)
-let chartInstance = null
-const dataPoints = reactive([]) // stocke les derniers points pour le graphique
+const people = ref(0)
+const entries = ref(0)
+const exits = ref(0)
+const battery = ref(100)
+const maxPeople = ref(100)
+const timestamp = ref('-')
 
-function addPoint(value) {
-  const now = new Date().toLocaleTimeString()
-  dataPoints.push({ time: now, value })
-  if (dataPoints.length > 20) dataPoints.shift() // garder max 20 points
-  if (chartInstance) {
-    chartInstance.data.labels = dataPoints.map(d => d.time)
-    chartInstance.data.datasets[0].data = dataPoints.map(d => d.value)
-    chartInstance.update()
-  }
-}
+// Status
+const batteryStatus = ref('BATTERIE OK')
 
-// --- DATA ET STATUTS ---
-let socket = null
-const data = reactive({
-  currentPeople: 0,
-  entries: 0,
-  exits: 0,
-  battery: 0,
-  status: 'DÉCONNECTÉ',
-  timestamp: '-'
-})
-
-const translateStatus = (status) => {
-  switch (status) {
-    case 'CONNECTED': return 'CONNECTÉ'
-    case 'DISCONNECTED': return 'DÉCONNECTÉ'
-    case 'RECONNECTING': return 'RECONNEXION'
-    case 'WARN': return 'ATTENTION'
-    case 'ERROR': return 'ERREUR'
-    default: return 'OK'
-  }
-}
-
-const connectWebsocket = () => {
-  socket = new WebSocket('ws://TON_SERVEUR:PORT/ws')
-
-  socket.onopen = () => { data.status = 'CONNECTÉ' }
-
-  socket.onmessage = (event) => {
-    try {
-      const msg = JSON.parse(event.data)
-
-      data.currentPeople = msg.currentPeople
-      data.entries = msg.entries
-      data.exits = msg.exits
-      data.battery = msg.battery
-      data.timestamp = msg.timestamp
-      data.status = translateStatus(msg.status || 'OK')
-
-      addPoint(msg.currentPeople) // mise à jour du graphique
-
-    } catch (e) {
-      console.error('Bad JSON', e)
-    }
-  }
-
-  socket.onclose = () => {
-    data.status = 'RECONNEXION'
-    setTimeout(connectWebsocket, 2000)
-  }
-}
+const chartRef = ref(null)
 
 onMounted(() => {
-  connectWebsocket()
+  setInterval(() => {
+    const inCount = Math.floor(Math.random() * 5)
+    const outCount = Math.floor(Math.random() * 4)
 
-  // Init graphique
-  chartInstance = new Chart(chart.value, {
-    type: 'line',
-    data: {
-      labels: [],
-      datasets: [{
-        label: "Personnes présentes",
-        data: [],
-        borderColor: "rgb(75, 192, 192)",
-        backgroundColor: "rgba(75, 192, 192, 0.2)",
-        tension: 0.2
-      }]
-    },
-    options: {
-      responsive: true,
-      scales: {
-        y: { beginAtZero: true }
-      }
-    }
-  })
+    entries.value += inCount
+    exits.value += outCount
+    people.value = Math.max(0, entries.value - exits.value)
+
+    battery.value = Math.max(0, battery.value - 1)
+
+    // Statut batterie
+    if (battery.value < 30) batteryStatus.value = 'BATTERIE FAIBLE'
+    else batteryStatus.value = 'BATTERIE OK'
+
+    chartRef.value.addValue(people.value, maxPeople.value)
+    timestamp.value = new Date().toLocaleTimeString()
+  }, 1000)
 })
 
-onUnmounted(() => { if (socket) socket.close() })
-
-const statusClass = computed(() => ({
-  ok: data.status === 'OK' || data.status === 'CONNECTÉ',
-  warn: data.status === 'ATTENTION',
-  error: data.status === 'ERREUR' || data.status === 'DÉCONNECTÉ'
+// Classes pour le badge batterie
+const statusBatteryClass = computed(() => ({
+  ok: batteryStatus.value === 'BATTERIE OK',
+  warn: batteryStatus.value === 'BATTERIE FAIBLE'
 }))
+
+// Couleur de l’indicateur capacité max
+const capacityIndicatorClass = computed(() => {
+  if (people.value >= maxPeople.value) return 'max'
+  if (people.value >= maxPeople.value * 0.9) return 'quasi'
+  return 'ok'
+})
+
+// Texte à afficher pour les personnes
+const peopleStatus = computed(() => {
+  if (people.value >= maxPeople.value) return 'PLEIN'
+  if (people.value >= maxPeople.value * 0.9) return 'QUASI PLEIN'
+  return 'LIBRE'
+})
 </script>
 
 <style>
-.app {
-  font-family: Arial, sans-serif;
-  padding: 30px;
+body {
+  margin: 0;
+  background: #0f172a;
 }
 
-.grid {
+.dashboard {
+  color: #e5e7eb;
+  font-family: system-ui, Arial, sans-serif;
+  padding: 16px;
+  max-width: 1200px;
+  margin: auto;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+header h1 {
+  font-size: 1.1rem;
+}
+
+/* Badge batterie */
+.status-battery {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+}
+.status-battery.ok { background: #16a34a; }
+.status-battery.warn { background: #dc2626; }
+
+/* Badge personnes */
+.status-people {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  min-width: 80px;
+  text-align: center;
+}
+.status-people.ok { background: #2563eb; }
+.status-people.quasi { background: #facc15; color: #0f172a; }
+.status-people.max { background: #dc2626; }
+
+/* Cartes */
+.cards {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
 }
 
 .card {
-  border: 1px solid #ddd;
-  padding: 20px;
-  border-radius: 10px;
-  background: #fafafa;
+  background: #1e293b;
+  padding: 12px;
+  border-radius: 12px;
   text-align: center;
 }
 
-.ok { color: green; }
-.warn { color: orange; }
-.error { color: red; }
+.card.highlight {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+}
 
-canvas {
-  margin-top: 20px;
-  max-width: 100%;
+.card h3 {
+  font-size: 0.8rem;
+  margin-bottom: 4px;
+}
+
+.card p {
+  font-size: 1.4rem;
+  font-weight: 600;
+}
+
+/* Carte capacité max */
+.capacity-card .capacity-container {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Indicateur capacité */
+.capacity-indicator {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.capacity-indicator.ok { background: #2563eb; }
+.capacity-indicator.quasi { background: #facc15; }
+.capacity-indicator.max { background: #dc2626; }
+
+/* Input transparent */
+.transparent-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: none;
+  background: #1e293b;
+  color: #e5e7eb;
+  text-align: center;
+  font-weight: 600;
+}
+
+footer {
+  margin-top: 10px;
+  font-size: 0.7rem;
+  opacity: 0.7;
+  text-align: right;
 }
 </style>
