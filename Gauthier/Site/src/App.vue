@@ -4,6 +4,7 @@
       <h1>Supervision – Comptage</h1>
       <span class="status-battery" :class="statusBatteryClass">{{ batteryStatus }}</span>
       <span class="status-people" :class="capacityIndicatorClass">{{ peopleStatus }}</span>
+        <button class="admin-btn" @click="goToAdmin">Admin</button>
     </header>
 
     <section class="cards">
@@ -194,6 +195,21 @@ header h1 {
 .capacity-indicator.ok { background: #2563eb; }
 .capacity-indicator.quasi { background: #facc15; }
 .capacity-indicator.max { background: #dc2626; }
+.admin-btn {
+  margin-left: auto;
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: none;
+  background: #334155;
+  color: #e5e7eb;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.admin-btn:hover {
+  background: #475569;
+}
 
 /* Input transparent */
 .transparent-input {
