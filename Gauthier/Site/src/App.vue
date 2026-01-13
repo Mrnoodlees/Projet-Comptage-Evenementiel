@@ -1,10 +1,34 @@
 <template>
-  <div class="dashboard">
+  <!-- LOGIN -->
+  <Login v-if="!isAuthenticated" @success="isAuthenticated = true" />
+
+  <!-- ADMIN -->
+  <Admin
+    v-else-if="isAdmin"
+    :maxPeople="maxPeople"
+    :battery="battery"
+    @update:maxPeople="maxPeople = $event"
+    @resetCounters="resetCounters"
+    @resetBattery="battery = 100"
+    @back="isAdmin = false"
+  />
+
+  <!-- DASHBOARD -->
+  <div v-else class="dashboard">
     <header>
       <h1>Supervision – Comptage</h1>
-      <span class="status-battery" :class="statusBatteryClass">{{ batteryStatus }}</span>
-      <span class="status-people" :class="capacityIndicatorClass">{{ peopleStatus }}</span>
-        <button class="admin-btn" @click="goToAdmin">Admin</button>
+
+      <span class="status-battery" :class="statusBatteryClass">
+        {{ batteryStatus }}
+      </span>
+
+      <span class="status-people" :class="capacityIndicatorClass">
+        {{ peopleStatus }}
+      </span>
+
+      <button class="admin-btn" @click="isAdmin = true">
+        Admin
+      </button>
     </header>
 
     <section class="cards">
@@ -28,12 +52,19 @@
         <p>{{ battery }}%</p>
       </div>
 
-      <!-- Carte capacité max -->
       <div class="card capacity-card">
         <h3>Capacité max</h3>
         <div class="capacity-container">
-          <span class="capacity-indicator" :class="capacityIndicatorClass"></span>
-          <input type="number" v-model.number="maxPeople" min="1" class="transparent-input" />
+          <span
+            class="capacity-indicator"
+            :class="capacityIndicatorClass"
+          ></span>
+          <input
+            type="number"
+            v-model.number="maxPeople"
+            min="1"
+            class="transparent-input"
+          />
         </div>
       </div>
     </section>
@@ -48,8 +79,15 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import Login from './components/Login.vue'
 import PeopleChart from './components/PeopleChart.vue'
+import Admin from './components/Admin.vue'
 
+/* --- AUTH & NAV --- */
+const isAuthenticated = ref(false)
+const isAdmin = ref(false)
+
+/* --- DATA --- */
 const people = ref(0)
 const entries = ref(0)
 const exits = ref(0)
@@ -57,13 +95,14 @@ const battery = ref(100)
 const maxPeople = ref(100)
 const timestamp = ref('-')
 
-// Status
 const batteryStatus = ref('BATTERIE OK')
-
 const chartRef = ref(null)
 
+/* --- SIMULATION --- */
 onMounted(() => {
   setInterval(() => {
+    if (isAdmin.value) return
+
     const inCount = Math.floor(Math.random() * 5)
     const outCount = Math.floor(Math.random() * 4)
 
@@ -73,29 +112,34 @@ onMounted(() => {
 
     battery.value = Math.max(0, battery.value - 1)
 
-    // Statut batterie
-    if (battery.value < 30) batteryStatus.value = 'BATTERIE FAIBLE'
-    else batteryStatus.value = 'BATTERIE OK'
+    batteryStatus.value =
+      battery.value < 30 ? 'BATTERIE FAIBLE' : 'BATTERIE OK'
 
-    chartRef.value.addValue(people.value, maxPeople.value)
+    chartRef.value?.addValue(people.value, maxPeople.value)
+
     timestamp.value = new Date().toLocaleTimeString()
   }, 1000)
 })
 
-// Classes pour le badge batterie
+/* --- ADMIN ACTIONS --- */
+const resetCounters = () => {
+  people.value = 0
+  entries.value = 0
+  exits.value = 0
+}
+
+/* --- COMPUTED --- */
 const statusBatteryClass = computed(() => ({
   ok: batteryStatus.value === 'BATTERIE OK',
   warn: batteryStatus.value === 'BATTERIE FAIBLE'
 }))
 
-// Couleur de l’indicateur capacité max
 const capacityIndicatorClass = computed(() => {
   if (people.value >= maxPeople.value) return 'max'
   if (people.value >= maxPeople.value * 0.9) return 'quasi'
   return 'ok'
 })
 
-// Texte à afficher pour les personnes
 const peopleStatus = computed(() => {
   if (people.value >= maxPeople.value) return 'PLEIN'
   if (people.value >= maxPeople.value * 0.9) return 'QUASI PLEIN'
@@ -128,7 +172,7 @@ header h1 {
   font-size: 1.1rem;
 }
 
-/* Badge batterie */
+/* Batterie */
 .status-battery {
   padding: 4px 10px;
   border-radius: 12px;
@@ -137,7 +181,7 @@ header h1 {
 .status-battery.ok { background: #16a34a; }
 .status-battery.warn { background: #dc2626; }
 
-/* Badge personnes */
+/* Personnes */
 .status-people {
   padding: 4px 10px;
   border-radius: 12px;
@@ -178,23 +222,23 @@ header h1 {
   font-weight: 600;
 }
 
-/* Carte capacité max */
-.capacity-card .capacity-container {
+/* Capacité */
+.capacity-container {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-/* Indicateur capacité */
 .capacity-indicator {
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  display: inline-block;
 }
 .capacity-indicator.ok { background: #2563eb; }
 .capacity-indicator.quasi { background: #facc15; }
 .capacity-indicator.max { background: #dc2626; }
+
+/* Admin */
 .admin-btn {
   margin-left: auto;
   padding: 6px 12px;
@@ -204,17 +248,13 @@ header h1 {
   color: #e5e7eb;
   font-size: 0.75rem;
   cursor: pointer;
-  transition: background 0.2s;
 }
-
 .admin-btn:hover {
   background: #475569;
 }
 
-/* Input transparent */
 .transparent-input {
   width: 100%;
-  box-sizing: border-box;
   padding: 4px 8px;
   border-radius: 8px;
   border: none;
