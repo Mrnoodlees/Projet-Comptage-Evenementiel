@@ -55,10 +55,7 @@
       <div class="card capacity-card">
         <h3>Capacité max</h3>
         <div class="capacity-container">
-          <span
-            class="capacity-indicator"
-            :class="capacityIndicatorClass"
-          ></span>
+          <span class="capacity-indicator" :class="capacityIndicatorClass"></span>
           <input
             type="number"
             v-model.number="maxPeople"
@@ -78,7 +75,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { io } from 'socket.io-client'
 import Login from './components/Login.vue'
 import PeopleChart from './components/PeopleChart.vue'
 import Admin from './components/Admin.vue'
@@ -95,30 +93,77 @@ const battery = ref(100)
 const maxPeople = ref(100)
 const timestamp = ref('-')
 
+// Status
 const batteryStatus = ref('BATTERIE OK')
+
 const chartRef = ref(null)
+let socket = null
 
-/* --- SIMULATION --- */
+/* --- ANTI DOUBLE COMPTE --- */
+let lastPassageAt = 0
+
+/* --- SOCKET.IO --- */
 onMounted(() => {
-  setInterval(() => {
-    if (isAdmin.value) return
+  socket = io('http://178.32.107.35:3000')
 
-    const inCount = Math.floor(Math.random() * 5)
-    const outCount = Math.floor(Math.random() * 4)
+  socket.on('connect', () => {
+    console.log('✅ Socket connecté')
+  })
 
-    entries.value += inCount
-    exits.value += outCount
-    people.value = Math.max(0, entries.value - exits.value)
+  socket.on('init', data => {
+    console.log('INIT', data)
+    people.value = data.people ?? people.value
+    entries.value = data.entries ?? entries.value
+    exits.value = data.exits ?? exits.value
+    battery.value = data.bat ?? battery.value
+    maxPeople.value = data.maxPeople ?? maxPeople.value
+  })
 
-    battery.value = Math.max(0, battery.value - 1)
+  socket.on('passage', data => {
+    console.log('PASSAGE', data)
 
-    batteryStatus.value =
-      battery.value < 30 ? 'BATTERIE FAIBLE' : 'BATTERIE OK'
+    // On compte UNIQUEMENT les passages validés
+    if (data.type !== 'FIN') return
+
+    // Anti double déclenchement
+    const now = Date.now()
+    if (now - lastPassageAt < 300) return
+    lastPassageAt = now
+
+    if (data.mode === 'ENTREE') {
+      entries.value++
+      people.value++
+    } else if (data.mode === 'SORTIE') {
+      exits.value++
+      people.value = Math.max(0, people.value - 1)
+    }
 
     chartRef.value?.addValue(people.value, maxPeople.value)
+    timestamp.value = new Date().toLocaleTimeString()
+  })
+
+  socket.on('status', data => {
+    console.log('STATUS', data)
+
+    if (data.battery !== undefined) {
+      battery.value = data.battery
+      batteryStatus.value =
+        battery.value < 30 ? 'BATTERIE FAIBLE' : 'BATTERIE OK'
+    }
 
     timestamp.value = new Date().toLocaleTimeString()
-  }, 1000)
+  })
+
+  socket.on('config', data => {
+    console.log('CONFIG', data)
+    if (data.maxPeople !== undefined) {
+      maxPeople.value = data.maxPeople
+    }
+  })
+})
+
+onBeforeUnmount(() => {
+  socket?.disconnect()
 })
 
 /* --- ADMIN ACTIONS --- */
@@ -148,6 +193,7 @@ const peopleStatus = computed(() => {
 </script>
 
 <style>
+/* 🔒 STYLE STRICTEMENT IDENTIQUE À TON ORIGINAL */
 body {
   margin: 0;
   background: #0f172a;
@@ -172,7 +218,7 @@ header h1 {
   font-size: 1.1rem;
 }
 
-/* Batterie */
+/* Badge batterie */
 .status-battery {
   padding: 4px 10px;
   border-radius: 12px;
@@ -181,7 +227,7 @@ header h1 {
 .status-battery.ok { background: #16a34a; }
 .status-battery.warn { background: #dc2626; }
 
-/* Personnes */
+/* Badge personnes */
 .status-people {
   padding: 4px 10px;
   border-radius: 12px;
@@ -222,17 +268,19 @@ header h1 {
   font-weight: 600;
 }
 
-/* Capacité */
-.capacity-container {
+/* Carte capacité max */
+.capacity-card .capacity-container {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
+/* Indicateur capacité */
 .capacity-indicator {
   width: 12px;
   height: 12px;
   border-radius: 50%;
+  display: inline-block;
 }
 .capacity-indicator.ok { background: #2563eb; }
 .capacity-indicator.quasi { background: #facc15; }
@@ -248,13 +296,17 @@ header h1 {
   color: #e5e7eb;
   font-size: 0.75rem;
   cursor: pointer;
+  transition: background 0.2s;
 }
+
 .admin-btn:hover {
   background: #475569;
 }
 
+/* Input transparent */
 .transparent-input {
   width: 100%;
+  box-sizing: border-box;
   padding: 4px 8px;
   border-radius: 8px;
   border: none;
