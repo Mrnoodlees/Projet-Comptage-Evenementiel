@@ -105,18 +105,18 @@ mqttClient.on('message', async (topic, message) => {
         // console.log("MQTT PASSAGE RAW :", payload);
 
         // ESP obligatoire
-        if (!payload.id) return;
+        if (!payload.appareil_id) return;
 
         // ENTREE / SORTIE
-        if (payload.mode !== "ENTREE" && payload.mode !== "SORTIE") return;
+        if (payload.mode !== "ENTREE" && payload.type !== "SORTIE") return;
 
         // DEBUT / FIN
-        if (payload.type !== "DEBUT" && payload.type !== "FIN") return;
+        if (payload.type_passage !== "DEBUT" && payload.type_passage !== "FIN") return;
 
         const dbPassage = {
-          appareil_id: payload.id,
-          type_passage: payload.type,
-          date_heure: payload.ts ? new Date(payload.ts) : new Date()
+          appareil_id: payload.appareil_id,
+          type_passage: payload.type_passage,
+          date_heure: payload.date_heure ? new Date(payload.date_heure) : new Date()
         };
 
         cache.passage = dbPassage;
