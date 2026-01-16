@@ -55,15 +55,16 @@
       <div class="card capacity-card">
         <h3>Capacité max</h3>
         <div class="capacity-container">
-          <span class="capacity-indicator" :class="capacityIndicatorClass"></span>
-          <input
-            type="number"
-            v-model.number="maxPeople"
-            min="1"
-            class="transparent-input"
-          />
+          <span
+            class="capacity-indicator"
+            :class="capacityIndicatorClass"
+          ></span>
+          <span class="capacity-value">
+            {{ maxPeople }}
+          </span>
         </div>
       </div>
+
     </section>
 
     <PeopleChart ref="chartRef" />
@@ -80,6 +81,8 @@ import { io } from 'socket.io-client'
 import Login from './components/Login.vue'
 import PeopleChart from './components/PeopleChart.vue'
 import Admin from './components/Admin.vue'
+
+
 
 /* --- AUTH & NAV --- */
 const isAuthenticated = ref(false)
@@ -191,135 +194,6 @@ const peopleStatus = computed(() => {
   return 'LIBRE'
 })
 </script>
+<style src="./src/mainstyle.css"></style>
 
-<style>
-/* 🔒 STYLE STRICTEMENT IDENTIQUE À TON ORIGINAL */
-body {
-  margin: 0;
-  background: #0f172a;
-}
 
-.dashboard {
-  color: #e5e7eb;
-  font-family: system-ui, Arial, sans-serif;
-  padding: 16px;
-  max-width: 1200px;
-  margin: auto;
-}
-
-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 14px;
-}
-
-header h1 {
-  font-size: 1.1rem;
-}
-
-/* Badge batterie */
-.status-battery {
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-size: 0.75rem;
-}
-.status-battery.ok { background: #16a34a; }
-.status-battery.warn { background: #dc2626; }
-
-/* Badge personnes */
-.status-people {
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-size: 0.75rem;
-  min-width: 80px;
-  text-align: center;
-}
-.status-people.ok { background: #2563eb; }
-.status-people.quasi { background: #facc15; color: #0f172a; }
-.status-people.max { background: #dc2626; }
-
-/* Cartes */
-.cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  gap: 12px;
-  margin-bottom: 14px;
-}
-
-.card {
-  background: #1e293b;
-  padding: 12px;
-  border-radius: 12px;
-  text-align: center;
-}
-
-.card.highlight {
-  background: linear-gradient(135deg, #2563eb, #1d4ed8);
-}
-
-.card h3 {
-  font-size: 0.8rem;
-  margin-bottom: 4px;
-}
-
-.card p {
-  font-size: 1.4rem;
-  font-weight: 600;
-}
-
-/* Carte capacité max */
-.capacity-card .capacity-container {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-/* Indicateur capacité */
-.capacity-indicator {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  display: inline-block;
-}
-.capacity-indicator.ok { background: #2563eb; }
-.capacity-indicator.quasi { background: #facc15; }
-.capacity-indicator.max { background: #dc2626; }
-
-/* Admin */
-.admin-btn {
-  margin-left: auto;
-  padding: 6px 12px;
-  border-radius: 10px;
-  border: none;
-  background: #334155;
-  color: #e5e7eb;
-  font-size: 0.75rem;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-.admin-btn:hover {
-  background: #475569;
-}
-
-/* Input transparent */
-.transparent-input {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 4px 8px;
-  border-radius: 8px;
-  border: none;
-  background: #1e293b;
-  color: #e5e7eb;
-  text-align: center;
-  font-weight: 600;
-}
-
-footer {
-  margin-top: 10px;
-  font-size: 0.7rem;
-  opacity: 0.7;
-  text-align: right;
-}
-</style>
