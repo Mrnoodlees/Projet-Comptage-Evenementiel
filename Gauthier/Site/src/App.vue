@@ -64,7 +64,6 @@
           </span>
         </div>
       </div>
-
     </section>
 
     <PeopleChart ref="chartRef" />
@@ -81,8 +80,6 @@ import { io } from 'socket.io-client'
 import Login from './components/Login.vue'
 import PeopleChart from './components/PeopleChart.vue'
 import Admin from './components/Admin.vue'
-
-
 
 /* --- AUTH & NAV --- */
 const isAuthenticated = ref(false)
@@ -102,8 +99,8 @@ const batteryStatus = ref('BATTERIE OK')
 const chartRef = ref(null)
 let socket = null
 
-/* --- ANTI DOUBLE COMPTE --- */
-let lastPassageAt = 0
+/* --- ANTI DOUBLE COMPTE PAR PORTE --- */
+const lastPassageByDoor = {}
 
 /* --- SOCKET.IO --- */
 onMounted(() => {
@@ -126,17 +123,18 @@ onMounted(() => {
     console.log('PASSAGE', data)
 
     // On compte UNIQUEMENT les passages validés
-    if (data.type !== 'FIN') return
+    if (data.type_passage !== 'FIN') return
 
-    // Anti double déclenchement
     const now = Date.now()
-    if (now - lastPassageAt < 300) return
-    lastPassageAt = now
+    const doorId = data.appareil_id
+    if (!lastPassageByDoor[doorId]) lastPassageByDoor[doorId] = 0
+    if (now - lastPassageByDoor[doorId] < 300) return
+    lastPassageByDoor[doorId] = now
 
-    if (data.mode === 'ENTREE') {
+    if (data.type === 'ENTREE') {
       entries.value++
       people.value++
-    } else if (data.mode === 'SORTIE') {
+    } else if (data.type === 'SORTIE') {
       exits.value++
       people.value = Math.max(0, people.value - 1)
     }
@@ -194,6 +192,5 @@ const peopleStatus = computed(() => {
   return 'LIBRE'
 })
 </script>
+
 <style src="./src/mainstyle.css"></style>
-
-
