@@ -2,16 +2,29 @@ require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
 const mqtt = require('mqtt');
-const cors = require('cors'); // pour permettre l'accès depuis le site web
+const cors = require('cors');
+const axios = require('axios');
+const http = require('http');
+const { Server } = require('socket.io');
+const { Pool } = require('pg');
 
 const app = express();
 const PORT = 3000;
 
-// ===== Middleware =====
+// ================= MIDDLEWARE =================
 app.use(bodyParser.json());
 app.use(cors());
 
-// ===== Cache mémoire =====
+// ================= POSTGRES ===================
+const pool = new Pool({
+  host: process.env.DB_HOST,
+  port: process.env.DB_PORT || 5432,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME
+});
+
+// ================= CACHE ======================
 const cache = {
   passage: null,
   status: null,
@@ -19,17 +32,28 @@ const cache = {
   lastUpdate: null
 };
 
-// ===== Topics MQTT =====
+// ================= MQTT TOPICS ================
 const TOPICS = {
   PASSAGE: process.env.MQTT_TOPIC_PASSAGE,
   STATUS: process.env.MQTT_TOPIC_STATUS,
   CONFIG: process.env.MQTT_TOPIC_CONFIG
 };
 
-// ===== Connexion MQTT =====
+// ================= HTTP + WS ==================
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: "*" }
+});
+
+io.on("connection", (socket) => {
+  console.log("🟢 Frontend connecté");
+  socket.emit("init", cache);
+});
+
+// ================= MQTT =======================
 const mqttClient = mqtt.connect(process.env.MQTT_BROKER, {
-  username: process.env.MQTT_USER || 'leo',   // user du broker
-  password: process.env.MQTT_PASSWORD || 'test' // password du broker
+  username: process.env.MQTT_USER,
+  password: process.env.MQTT_PASSWORD
 });
 
 mqttClient.on('connect', () => {
@@ -39,102 +63,139 @@ mqttClient.on('connect', () => {
     if (err) {
       console.error('❌ Erreur abonnement MQTT', err);
     } else {
-      console.log('📡 Abonné aux topics MQTT :', Object.values(TOPICS));
+      console.log('📡 Abonné aux topics MQTT');
     }
   });
 });
 
-// ===== Réception des messages MQTT =====
-mqttClient.on('message', (topic, message) => {
+// ================= WEBHOOK ====================
+async function sendWebhook(event, data) {
+  if (!process.env.WEBHOOK_URL) return;
+
   try {
-    const payload = JSON.parse(message.toString()); // Python envoie du JSON
+    await axios.post(
+      process.env.WEBHOOK_URL,
+      {
+        event,
+        timestamp: Date.now(),
+        data
+      },
+      {
+        headers: {
+          "X-Webhook-Secret": process.env.WEBHOOK_SECRET || "dev"
+        }
+      }
+    );
+    console.log(`🔔 Webhook envoyé : ${event}`);
+  } catch (err) {
+    console.error("❌ Erreur webhook :", err.message);
+  }
+}
+
+// ================= MQTT MESSAGE ===============
+mqttClient.on('message', async (topic, message) => {
+  try {
+    const payload = JSON.parse(message.toString());
     cache.lastUpdate = new Date();
 
     switch (topic) {
-      case TOPICS.PASSAGE:
-        cache.passage = payload;
+
+      case TOPICS.PASSAGE: {
+        // 🔎 DEBUG (optionnel)
+        // console.log("MQTT PASSAGE RAW :", payload);
+
+        // ESP obligatoire
+        if (!payload.id) return;
+
+        // ENTREE / SORTIE
+        if (payload.mode !== "ENTREE" && payload.mode !== "SORTIE") return;
+
+        // DEBUT / FIN
+        if (payload.type !== "DEBUT" && payload.type !== "FIN") return;
+
+        const dbPassage = {
+          appareil_id: payload.id,
+          type_passage: payload.type,
+          date_heure: payload.ts ? new Date(payload.ts) : new Date()
+        };
+
+        cache.passage = dbPassage;
+
+        io.emit("passage", dbPassage);
+        sendWebhook("PASSAGE", dbPassage);
+        await savePassage(dbPassage);
         break;
+      }
 
       case TOPICS.STATUS:
         cache.status = payload;
+        io.emit("status", payload);
+        if (payload.bat && payload.bat < 700) {
+          sendWebhook("BATTERIE_FAIBLE", payload);
+        }
         break;
 
       case TOPICS.CONFIG:
         cache.config = payload;
+        io.emit("config", payload);
+        sendWebhook("CONFIG", payload);
         break;
-
-      default:
-        console.log('⚠️ Topic non géré :', topic);
     }
 
     console.log(`[MQTT] ${topic} →`, payload);
 
   } catch (err) {
-    console.error('❌ Erreur parsing MQTT :', err.message);
+    console.error("❌ Erreur MQTT :", err.message);
   }
 });
 
-// =================================================
-// ================== API REST =====================
-// =================================================
-
-// Test API
+// ================= API ========================
 app.get('/', (req, res) => {
   res.json({
-    message: 'API MQTT → Web opérationnelle 🚀',
+    status: "API OK",
     lastUpdate: cache.lastUpdate
   });
 });
 
-// 🔹 Dernier passage détecté
 app.get('/api/passage', (req, res) => {
-  res.json({
-    topic: TOPICS.PASSAGE,
-    data: cache.passage,
-    lastUpdate: cache.lastUpdate
-  });
+  res.json(cache.passage);
 });
 
-// 🔹 Dernier status
-app.get('/api/status', (req, res) => {
-  res.json({
-    topic: TOPICS.STATUS,
-    data: cache.status,
-    lastUpdate: cache.lastUpdate
-  });
+// ================= WEBHOOK TEST =================
+app.post('/webhook/test', (req, res) => {
+  console.log("🧪 WEBHOOK TEST REÇU :", req.body);
+  res.json({ ok: true });
 });
 
-// 🔹 Dernière config
-app.get('/api/config', (req, res) => {
-  res.json({
-    topic: TOPICS.CONFIG,
-    data: cache.config,
-    lastUpdate: cache.lastUpdate
-  });
+
+// ================= SERVER =====================
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Serveur lancé sur http://0.0.0.0:${PORT}`);
 });
 
-// 🔹 Envoyer une config vers l’ESP (via MQTT)
-app.post('/api/config', (req, res) => {
-  const config = req.body;
+// ================= BDD ========================
+async function savePassage(passage) {
+  const query = `
+    INSERT INTO passages (
+      appareil_id,
+      type,
+      date_heure,
+      type_passage
+    )
+    VALUES ($1, $2, $3, $4);
+  `;
 
-  mqttClient.publish(
-    TOPICS.CONFIG,
-    JSON.stringify(config),
-    { qos: 1 },
-    (err) => {
-      if (err) {
-        return res.status(500).json({ error: 'Erreur envoi MQTT' });
-      }
+  const values = [
+    passage.appareil_id,
+    "PASSAGE",
+    passage.date_heure,
+    passage.type_passage
+  ];
 
-      cache.config = config;
-      cache.lastUpdate = new Date();
-
-      res.json({ message: 'Configuration envoyée à l’ESP ✅' });
-    }
-  );
-});
-
-// ===== Lancement serveur =====
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 API disponible sur http://0.0.0.0:${PORT}`);
-});
+  try {
+    await pool.query(query, values);
+    console.log("💾 Passage enregistré :", passage.appareil_id, passage.type_passage);
+  } catch (err) {
+    console.error("❌ Erreur BDD :", err.message);
+  }
+}
