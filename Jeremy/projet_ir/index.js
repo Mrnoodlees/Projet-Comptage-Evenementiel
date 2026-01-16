@@ -105,18 +105,19 @@ mqttClient.on('message', async (topic, message) => {
         // console.log("MQTT PASSAGE RAW :", payload);
 
         // ESP obligatoire
-        if (!payload.appareil_id) return;
+        if (!payload.id) return;
 
         // ENTREE / SORTIE
-        if (payload.mode !== "ENTREE" && payload.type !== "SORTIE") return;
+        if (payload.mode !== "ENTREE" && payload.mode !== "SORTIE") return;
 
         // DEBUT / FIN
-        if (payload.type_passage !== "DEBUT" && payload.type_passage !== "FIN") return;
+        if (payload.type !== "DEBUT" && payload.type !== "FIN") return;
 
         const dbPassage = {
-          appareil_id: payload.appareil_id,
-          type_passage: payload.type_passage,
-          date_heure: payload.date_heure ? new Date(payload.date_heure) : new Date()
+          appareil_id: payload.id,
+          type: payload.mode,
+          type_passage: payload.type,
+          date_heure: payload.ts ? new Date(Date.now()) : new Date()
         };
 
         cache.passage = dbPassage;
@@ -187,15 +188,16 @@ async function savePassage(passage) {
 
   const values = [
     passage.appareil_id,
-    "PASSAGE",
+    passage.type,        // ENTREE ou SORTIE (vrai)
     passage.date_heure,
-    passage.type_passage
+    passage.type_passage // DEBUT ou FIN
   ];
 
   try {
     await pool.query(query, values);
-    console.log("💾 Passage enregistré :", passage.appareil_id, passage.type_passage);
+    console.log("💾 Passage enregistré :", passage.appareil_id, passage.type, passage.type_passage);
   } catch (err) {
     console.error("❌ Erreur BDD :", err.message);
   }
 }
+
