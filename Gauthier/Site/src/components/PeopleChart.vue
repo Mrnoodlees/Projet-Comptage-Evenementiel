@@ -13,29 +13,41 @@ let chart = null
 let index = 0
 const MAX_DISPLAYED_POINTS = 25
 let yMax = 50
+const dataValues = ref([]) // Pour persistance
 
 const addValue = (value, maxLimit) => {
   if (!chart) return
 
   chart.data.labels.push(index)
   chart.data.datasets[0].data.push(value)
+  dataValues.value.push({ index, people: value, maxPeople: maxLimit })
   index++
 
-  // Scroll fluide : défilement via min/max
   if (chart.data.labels.length > MAX_DISPLAYED_POINTS) {
     chart.options.scales.x.min = index - MAX_DISPLAYED_POINTS
     chart.options.scales.x.max = index - 1
   }
 
-  // Axe Y dynamique mais stable
   const maxValue = Math.max(...chart.data.datasets[0].data, maxLimit)
   yMax = Math.max(yMax, maxValue)
   chart.options.scales.y.max = Math.ceil(yMax / 10) * 10 + 10
 
-  chart.update('none') // update rapide sans animation
+  chart.update('none')
 }
 
-defineExpose({ addValue })
+const reset = () => {
+  if (!chart) return
+  chart.data.labels = []
+  chart.data.datasets[0].data = []
+  dataValues.value = []
+  index = 0
+  yMax = 50
+  chart.update()
+}
+
+const getValues = () => dataValues.value
+
+defineExpose({ addValue, reset, getValues })
 
 onMounted(() => {
   chart = new Chart(canvas.value, {

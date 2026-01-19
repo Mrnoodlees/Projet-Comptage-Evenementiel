@@ -10,6 +10,7 @@
     @update:maxPeople="maxPeople = $event"
     @resetCounters="resetCounters"
     @resetBattery="battery = 100"
+    @generatePassage="handleGeneratedPassage"
     @back="isAdmin = false"
   />
 
@@ -55,18 +56,14 @@
       <div class="card capacity-card">
         <h3>Capacité max</h3>
         <div class="capacity-container">
-          <span
-            class="capacity-indicator"
-            :class="capacityIndicatorClass"
-          ></span>
-          <span class="capacity-value">
-            {{ maxPeople }}
-          </span>
+          <span class="capacity-indicator" :class="capacityIndicatorClass"></span>
+          <span class="capacity-value">{{ maxPeople }}</span>
         </div>
       </div>
     </section>
 
     <PeopleChart ref="chartRef" />
+    <PassageHistory ref="historyRef" />
 
     <footer>
       MAJ : {{ timestamp }}
@@ -77,104 +74,150 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { io } from 'socket.io-client'
-import Login from './components/Login.vue'
-import PeopleChart from './components/PeopleChart.vue'
-import Admin from './components/Admin.vue'
 
-/* --- AUTH & NAV --- */
+import Login from '@/components/Login.vue'
+import PeopleChart from '@/components/PeopleChart.vue'
+import Admin from '@/components/Admin.vue'
+import PassageHistory from '@/components/PassageHistory.vue'
+
+/* ================== CONSTANTES ================== */
+const STORAGE_COUNTERS = 'supervision_counters_v1'
+const STORAGE_CHART = 'supervision_chart_v1'
+
+/* ================== AUTH ================== */
 const isAuthenticated = ref(false)
 const isAdmin = ref(false)
 
-/* --- DATA --- */
+/* ================== DATA ================== */
 const people = ref(0)
 const entries = ref(0)
 const exits = ref(0)
 const battery = ref(100)
 const maxPeople = ref(100)
 const timestamp = ref('-')
-
-// Status
 const batteryStatus = ref('BATTERIE OK')
 
+/* ================== REFS ================== */
 const chartRef = ref(null)
+const historyRef = ref(null)
 let socket = null
 
-/* --- ANTI DOUBLE COMPTE PAR PORTE --- */
+/* ================== ANTI DOUBLE PAR PORTE ================== */
 const lastPassageByDoor = {}
 
-/* --- SOCKET.IO --- */
+/* ================== PERSISTENCE ================== */
+const loadCounters = () => {
+  const saved = localStorage.getItem(STORAGE_COUNTERS)
+  if (saved) {
+    const data = JSON.parse(saved)
+    people.value = data.people ?? 0
+    entries.value = data.entries ?? 0
+    exits.value = data.exits ?? 0
+  }
+}
+
+const saveCounters = () => {
+  localStorage.setItem(
+    STORAGE_COUNTERS,
+    JSON.stringify({ people: people.value, entries: entries.value, exits: exits.value })
+  )
+}
+
+const loadChart = () => {
+  const saved = localStorage.getItem(STORAGE_CHART)
+  if (saved && chartRef.value) {
+    const data = JSON.parse(saved)
+    data.forEach(d => chartRef.value.addValue(d.people, d.maxPeople))
+  }
+}
+
+const saveChart = () => {
+  if (!chartRef.value) return
+  const values = chartRef.value.getValues()
+  localStorage.setItem(STORAGE_CHART, JSON.stringify(values))
+}
+
+/* ================== SOCKET ================== */
 onMounted(() => {
+  loadCounters()
+  loadChart()
+
   socket = io('http://178.32.107.35:3000')
 
-  socket.on('connect', () => {
-    console.log('✅ Socket connecté')
-  })
+  socket.on('connect', () => console.log('✅ Socket connecté'))
 
   socket.on('init', data => {
-    console.log('INIT', data)
-    people.value = data.people ?? people.value
-    entries.value = data.entries ?? entries.value
-    exits.value = data.exits ?? exits.value
-    battery.value = data.bat ?? battery.value
     maxPeople.value = data.maxPeople ?? maxPeople.value
+    battery.value = data.bat ?? battery.value
   })
 
-  socket.on('passage', data => {
-    console.log('PASSAGE', data)
-
-    // On compte UNIQUEMENT les passages validés
-    if (data.type_passage !== 'FIN') return
-
-    const now = Date.now()
-    const doorId = data.appareil_id
-    if (!lastPassageByDoor[doorId]) lastPassageByDoor[doorId] = 0
-    if (now - lastPassageByDoor[doorId] < 300) return
-    lastPassageByDoor[doorId] = now
-
-    if (data.type === 'ENTREE') {
-      entries.value++
-      people.value++
-    } else if (data.type === 'SORTIE') {
-      exits.value++
-      people.value = Math.max(0, people.value - 1)
-    }
-
-    chartRef.value?.addValue(people.value, maxPeople.value)
-    timestamp.value = new Date().toLocaleTimeString()
-  })
+  socket.on('passage', data => handlePassage(data))
 
   socket.on('status', data => {
-    console.log('STATUS', data)
-
     if (data.battery !== undefined) {
       battery.value = data.battery
       batteryStatus.value =
         battery.value < 30 ? 'BATTERIE FAIBLE' : 'BATTERIE OK'
     }
-
     timestamp.value = new Date().toLocaleTimeString()
   })
 
   socket.on('config', data => {
-    console.log('CONFIG', data)
-    if (data.maxPeople !== undefined) {
-      maxPeople.value = data.maxPeople
-    }
+    if (data.maxPeople !== undefined) maxPeople.value = data.maxPeople
   })
 })
 
-onBeforeUnmount(() => {
-  socket?.disconnect()
-})
+onBeforeUnmount(() => socket?.disconnect())
 
-/* --- ADMIN ACTIONS --- */
+/* ================== PASSAGE HANDLER ================== */
+const handlePassage = (data) => {
+  if (data.type_passage !== 'FIN') return
+
+  const now = Date.now()
+  const doorId = data.appareil_id
+  if (!lastPassageByDoor[doorId]) lastPassageByDoor[doorId] = 0
+  if (now - lastPassageByDoor[doorId] < 300) return
+  lastPassageByDoor[doorId] = now
+
+  if (data.type === 'ENTREE') {
+    entries.value++
+    people.value++
+  } else if (data.type === 'SORTIE') {
+    exits.value++
+    people.value = Math.max(0, people.value - 1)
+  }
+
+  saveCounters()
+  historyRef.value?.addEntry(data)
+  chartRef.value?.addValue(people.value, maxPeople.value)
+  saveChart()
+  timestamp.value = new Date().toLocaleTimeString()
+}
+
+/* ================== ADMIN ACTIONS ================== */
 const resetCounters = () => {
   people.value = 0
   entries.value = 0
   exits.value = 0
+  localStorage.removeItem(STORAGE_COUNTERS)
+  localStorage.removeItem(STORAGE_CHART)
+  historyRef.value?.resetHistory()
+  chartRef.value?.reset()
 }
 
-/* --- COMPUTED --- */
+/* ================== GENERATEUR ADMIN ================== */
+const handleGeneratedPassage = (dataArray) => {
+  dataArray.forEach((data, index) => {
+    setTimeout(() => {
+      handlePassage({
+        ...data,
+        date_heure: new Date(Date.now() + index * 10).toISOString()
+      })
+    }, index * 50)
+  })
+}
+
+/* ================== COMPUTED ================== */
 const statusBatteryClass = computed(() => ({
   ok: batteryStatus.value === 'BATTERIE OK',
   warn: batteryStatus.value === 'BATTERIE FAIBLE'
