@@ -11,8 +11,8 @@ const routes = [
   },
   {
     path: '/',
-    name: 'public-influence',
-    component: PublicInfluence
+    name: 'PublicInfluence',
+    component: () => import('@/views/PublicInfluence.vue')
   }
 ]
 
