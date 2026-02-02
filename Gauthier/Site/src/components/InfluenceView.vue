@@ -6,30 +6,46 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import InfluenceFilter from './InfluenceFilter.vue'
 import InfluenceChart from './InfluenceChart.vue'
 
-const STORAGE_KEY = 'influence_graphs_v1'
 const chartRef = ref(null)
+const passages = ref([])
 
-/* 🔁 Récupération de l’historique */
-const getHistory = () => {
-  return JSON.parse(localStorage.getItem('passage_history_v1') || '[]')
-}
+/* =========================
+   1️⃣ WebSocket
+========================= */
+onMounted(() => {
+  const ws = new WebSocket('ws://TON_SERVEUR')
 
+  ws.onmessage = (event) => {
+    const data = JSON.parse(event.data)
+
+    // on stocke les passages reçus
+    passages.value.push(data)
+  }
+})
+
+/* =========================
+   2️⃣ Génération du graphe
+========================= */
 const generate = ({ from, to }) => {
-  const history = getHistory()
-
-  const filtered = history.filter(p => {
+  // filtrage par dates
+  const filtered = passages.value.filter(p => {
     const d = new Date(p.date_heure)
     return d >= from && d <= to
   })
 
+  /* =========================
+     3️⃣ Agrégation par heure
+  ========================= */
   const buckets = {}
 
   filtered.forEach(p => {
     const d = new Date(p.date_heure)
+
+    // on regroupe par heure
     d.setMinutes(0, 0, 0)
     const key = d.toISOString()
 
@@ -37,20 +53,18 @@ const generate = ({ from, to }) => {
     buckets[key]++
   })
 
+  /* =========================
+     4️⃣ Données pour le graphe
+  ========================= */
   const labels = Object.keys(buckets).sort()
   const data = labels.map(l => buckets[l])
 
+  /* =========================
+     5️⃣ Affichage
+  ========================= */
   chartRef.value.render(
     labels.map(l => new Date(l).toLocaleString()),
     data
   )
-
-  saveGraph({ from, to, labels, data })
-}
-
-const saveGraph = (graph) => {
-  const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
-  saved.push({ date: new Date(), ...graph })
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(saved))
 }
 </script>

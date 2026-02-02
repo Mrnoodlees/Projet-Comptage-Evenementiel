@@ -80,6 +80,10 @@ import PeopleChart from '@/components/PeopleChart.vue'
 import Admin from '@/components/Admin.vue'
 import PassageHistory from '@/components/PassageHistory.vue'
 
+/* ================== CONSTANTES ================== */
+const STORAGE_COUNTERS = 'supervision_counters_v1'
+const STORAGE_CHART = 'supervision_chart_v1'
+
 /* ================== AUTH ================== */
 const isAuthenticated = ref(false)
 const isAdmin = ref(false)
@@ -98,41 +102,54 @@ const chartRef = ref(null)
 const historyRef = ref(null)
 let socket = null
 
-/* ================== API ================== */
-const API = 'http://178.32.107.35:3001/api/dashboard'
+/* ================== ANTI DOUBLE PAR PORTE ================== */
+const lastPassageByDoor = {}
 
-const loadDashboardState = async () => {
-  const res = await fetch(`${API}/state`)
-  const data = await res.json()
-
-  people.value = data.people
-  entries.value = data.entries
-  exits.value = data.exits
-  battery.value = data.battery
-  maxPeople.value = data.maxPeople
+/* ================== PERSISTENCE ================== */
+const loadCounters = () => {
+  const saved = localStorage.getItem(STORAGE_COUNTERS)
+  if (saved) {
+    const data = JSON.parse(saved)
+    people.value = data.people ?? 0
+    entries.value = data.entries ?? 0
+    exits.value = data.exits ?? 0
+  }
 }
 
-const loadHistory = async () => {
-  const res = await fetch(`${API}/history`)
-  const rows = await res.json()
-  rows.forEach(p => historyRef.value?.addEntry(p))
-}
-
-const loadChart = async () => {
-  const res = await fetch(`${API}/chart`)
-  const rows = await res.json()
-  rows.forEach(p =>
-    chartRef.value?.addValue(p.people, maxPeople.value)
+const saveCounters = () => {
+  localStorage.setItem(
+    STORAGE_COUNTERS,
+    JSON.stringify({ people: people.value, entries: entries.value, exits: exits.value })
   )
 }
 
+const loadChart = () => {
+  const saved = localStorage.getItem(STORAGE_CHART)
+  if (saved && chartRef.value) {
+    const data = JSON.parse(saved)
+    data.forEach(d => chartRef.value.addValue(d.people, d.maxPeople))
+  }
+}
+
+const saveChart = () => {
+  if (!chartRef.value) return
+  const values = chartRef.value.getValues()
+  localStorage.setItem(STORAGE_CHART, JSON.stringify(values))
+}
+
 /* ================== SOCKET ================== */
-onMounted(async () => {
-  await loadDashboardState()
-  await loadHistory()
-  await loadChart()
+onMounted(() => {
+  loadCounters()
+  loadChart()
 
   socket = io('http://178.32.107.35:3000')
+
+  socket.on('connect', () => console.log('✅ Socket connecté'))
+
+  socket.on('init', data => {
+    maxPeople.value = data.maxPeople ?? maxPeople.value
+    battery.value = data.bat ?? battery.value
+  })
 
   socket.on('passage', data => handlePassage(data))
 
@@ -146,17 +163,21 @@ onMounted(async () => {
   })
 
   socket.on('config', data => {
-    if (data.maxPeople !== undefined) {
-      maxPeople.value = data.maxPeople
-    }
+    if (data.maxPeople !== undefined) maxPeople.value = data.maxPeople
   })
 })
 
 onBeforeUnmount(() => socket?.disconnect())
 
-/* ================== PASSAGE ================== */
+/* ================== PASSAGE HANDLER ================== */
 const handlePassage = (data) => {
   if (data.type_passage !== 'FIN') return
+
+  const now = Date.now()
+  const doorId = data.appareil_id
+  if (!lastPassageByDoor[doorId]) lastPassageByDoor[doorId] = 0
+  if (now - lastPassageByDoor[doorId] < 300) return
+  lastPassageByDoor[doorId] = now
 
   if (data.type === 'ENTREE') {
     entries.value++
@@ -166,21 +187,34 @@ const handlePassage = (data) => {
     people.value = Math.max(0, people.value - 1)
   }
 
+  saveCounters()
   historyRef.value?.addEntry(data)
   chartRef.value?.addValue(people.value, maxPeople.value)
+  saveChart()
   timestamp.value = new Date().toLocaleTimeString()
 }
 
-/* ================== ADMIN ================== */
-const resetCounters = async () => {
-  await fetch(`${API}/reset`, { method: 'POST' })
-
+/* ================== ADMIN ACTIONS ================== */
+const resetCounters = () => {
   people.value = 0
   entries.value = 0
   exits.value = 0
-
+  localStorage.removeItem(STORAGE_COUNTERS)
+  localStorage.removeItem(STORAGE_CHART)
   historyRef.value?.resetHistory()
   chartRef.value?.reset()
+}
+
+/* ================== GENERATEUR ADMIN ================== */
+const handleGeneratedPassage = (dataArray) => {
+  dataArray.forEach((data, index) => {
+    setTimeout(() => {
+      handlePassage({
+        ...data,
+        date_heure: new Date(Date.now() + index * 10).toISOString()
+      })
+    }, index * 50)
+  })
 }
 
 /* ================== COMPUTED ================== */
