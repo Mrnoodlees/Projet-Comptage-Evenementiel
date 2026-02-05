@@ -72,7 +72,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { io } from 'socket.io-client'
 
 import Login from '@/components/Login.vue'
@@ -83,6 +83,10 @@ import PassageHistory from '@/components/PassageHistory.vue'
 /* ================== CONSTANTES ================== */
 const STORAGE_COUNTERS = 'supervision_counters_v1'
 const STORAGE_CHART = 'supervision_chart_v1'
+const STORAGE_HISTORY = 'passage_history_v1'
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://178.32.107.35:3000'
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || SOCKET_URL.replace(':3000', ':3001')
 
 /* ================== AUTH ================== */
 const isAuthenticated = ref(false)
@@ -137,12 +141,78 @@ const saveChart = () => {
   localStorage.setItem(STORAGE_CHART, JSON.stringify(values))
 }
 
-/* ================== SOCKET ================== */
-onMounted(() => {
-  loadCounters()
-  loadChart()
+/* ================== API ================== */
+const fetchJson = async (path, options = {}) => {
+  const response = await fetch(`${API_BASE_URL}${path}`, options)
+  if (!response.ok) {
+    throw new Error(`API ${response.status}`)
+  }
+  return response.json()
+}
 
-  socket = io('http://178.32.107.35:3000')
+const hydrateFromApi = async () => {
+  try {
+    const state = await fetchJson('/api/dashboard/state')
+    if (state) {
+      if (state.people !== undefined) people.value = Number(state.people)
+      if (state.entries !== undefined) entries.value = Number(state.entries)
+      if (state.exits !== undefined) exits.value = Number(state.exits)
+      if (state.battery !== undefined) {
+        battery.value = Number(state.battery)
+        batteryStatus.value =
+          battery.value < 30 ? 'BATTERIE FAIBLE' : 'BATTERIE OK'
+      }
+      if (state.maxPeople !== undefined) maxPeople.value = Number(state.maxPeople)
+      saveCounters()
+      timestamp.value = new Date().toLocaleTimeString()
+    }
+  } catch (err) {
+    console.warn('API dashboard/state indisponible', err)
+  }
+
+  if (!localStorage.getItem(STORAGE_CHART) && chartRef.value) {
+    try {
+      const rows = await fetchJson('/api/dashboard/people-chart')
+      rows.forEach(row => {
+        const peopleValue = Number(row.people)
+        if (!Number.isFinite(peopleValue)) return
+        chartRef.value.addValue(peopleValue, maxPeople.value)
+      })
+      saveChart()
+    } catch (err) {
+      console.warn('API dashboard/people-chart indisponible', err)
+    }
+  }
+
+  if (!localStorage.getItem(STORAGE_HISTORY) && historyRef.value) {
+    try {
+      const rows = await fetchJson('/api/passage?limit=100')
+      const ordered = [...rows].reverse()
+      ordered.forEach(row => {
+        const dateValue = row.date_heure || row.ts
+        const typeValue = row.type || row.mode_passage
+        const appareilValue = row.appareil_id || row.capteur_id || row.capteur || '-'
+        if (!dateValue || !typeValue) return
+        historyRef.value.addEntry({
+          date_heure: dateValue,
+          type: typeValue,
+          appareil_id: appareilValue
+        })
+      })
+    } catch (err) {
+      console.warn('API passage indisponible', err)
+    }
+  }
+}
+
+/* ================== SOCKET ================== */
+onMounted(async () => {
+  loadCounters()
+  await nextTick()
+  loadChart()
+  await hydrateFromApi()
+
+  socket = io(SOCKET_URL)
 
   socket.on('connect', () => console.log('✅ Socket connecté'))
 

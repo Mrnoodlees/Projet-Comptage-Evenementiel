@@ -32,15 +32,49 @@ const emit = defineEmits(['success'])
 const username = ref('')
 const password = ref('')
 const error = ref('')
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || ''
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ||
+  (SOCKET_URL ? SOCKET_URL.replace(':3000', ':3001') : window.location.origin)
+const ALLOW_LOCAL_LOGIN = import.meta.env.VITE_ALLOW_LOCAL_LOGIN === 'true'
+const isLocalAdmin = (user, pass) => user === 'admin' && pass === 'admin'
 
-const login = () => {
+const login = async () => {
   error.value = ''
 
-  // 🔐 Auth simple (à remplacer par API plus tard)
-  if (username.value === 'admin' && password.value === 'admin') {
-    emit('success')
-  } else {
-    error.value = 'Identifiants incorrects'
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: username.value,
+        password: password.value
+      })
+    })
+
+    if (response.ok) {
+      emit('success')
+      return
+    }
+
+    if (ALLOW_LOCAL_LOGIN && isLocalAdmin(username.value, password.value)) {
+      emit('success')
+      return
+    }
+
+    if (response.status === 401) {
+      error.value = 'Identifiants incorrects'
+      return
+    }
+
+    error.value = 'Connexion impossible (API)'
+  } catch (err) {
+    console.warn('API login indisponible, fallback local', err)
+    if (ALLOW_LOCAL_LOGIN && isLocalAdmin(username.value, password.value)) {
+      emit('success')
+    } else {
+      error.value = 'Identifiants incorrects'
+    }
   }
 }
 </script>
