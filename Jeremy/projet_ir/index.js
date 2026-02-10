@@ -43,9 +43,7 @@ const TOPICS = {
 
 // ================= HTTP + WS ==================
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: "*" }
-});
+const io = new Server(server, { cors: { origin: "*" } });
 
 io.on("connection", (socket) => {
   console.log("🟢 Frontend connecté");
@@ -60,39 +58,27 @@ const mqttClient = mqtt.connect(process.env.MQTT_BROKER, {
 
 mqttClient.on('connect', () => {
   console.log('✅ Connecté au broker MQTT');
-
   mqttClient.subscribe(Object.values(TOPICS), (err) => {
-    if (err) {
-      console.error('❌ Erreur abonnement MQTT', err);
-    } else {
-      console.log('📡 Abonné aux topics MQTT');
-    }
+    if (err) console.error('❌ Erreur abonnement MQTT', err);
+    else console.log('📡 Abonné aux topics MQTT');
   });
 });
 
 // ================= WEBHOOK ====================
 async function sendWebhook(event, data) {
-  if (!process.env.WEBHOOK_URL) return;
-
   try {
     await axios.post(
-      process.env.WEBHOOK_URL,
-      {
-        event,
-        timestamp: Date.now(),
-        data
-      },
-      {
-        headers: {
-          "X-Webhook-Secret": process.env.WEBHOOK_SECRET || "dev"
-        }
-      }
+      'http://178.32.107.35:3000/webhook/test',
+      { event, timestamp: Date.now(), data },
+      { headers: { "X-Webhook-Secret": process.env.WEBHOOK_SECRET || "dev" } }
     );
     console.log(`🔔 Webhook envoyé : ${event}`);
   } catch (err) {
     console.error("❌ Erreur webhook :", err.message);
   }
 }
+
+
 
 // ================= MQTT MESSAGE ===============
 mqttClient.on('message', async (topic, message) => {
@@ -102,53 +88,68 @@ mqttClient.on('message', async (topic, message) => {
 
     // ===== PASSAGE =====
     if (topic === TOPICS.PASSAGE) {
-
-      if (!payload.id) return;
-      if (!["ENTREE", "SORTIE"].includes(payload.mode)) return;
-      if (!["DEBUT", "FIN"].includes(payload.type)) return;
+      if (
+        !payload.id ||
+        !["ENTREE", "SORTIE"].includes(payload.type) ||
+        !["f", "b"].includes(payload.faisceau) ||
+        typeof payload.duree !== "number"
+      ) return;
 
       const passageMetier = {
         appareil_id: payload.id,
-        type: payload.mode,
-        date_heure: new Date()
+        type: payload.type,
+        faisceau: payload.faisceau,
+        duree: payload.duree
       };
 
       cache.passage = passageMetier;
       io.emit("passage", passageMetier);
 
+      await ensureAppareilExists(payload.id);
       await savePassage(passageMetier);
-      await saveLogPassage(payload);
-      sendWebhook("PASSAGE", passageMetier);
+      await sendWebhook("PASSAGE", passageMetier);
 
       console.log("🚪 Passage enregistré :", passageMetier);
     }
 
-    // ===== OSCILLO BRUT =====
+    // ===== OSCILLO =====
     else if (topic === TOPICS.OSCILLO) {
       cache.oscillo = payload;
       io.emit("oscillo", payload);
-      await saveOscillo(payload);
+
+      if (payload.id) {
+        await ensureAppareilExists(payload.id);
+        await saveOscillo(payload);
+      } else {
+        console.warn("⚠️ Oscillo reçu sans id appareil");
+      }
+
       console.log("📈 Oscillo brut reçu");
     }
 
-    // ===== EMETEUR STATUS =====
-    else if (topic === TOPICS.EMETEUR_STATUS) {
-      cache.emeteur_status = payload;
-      io.emit("emeteur_status", payload);
+    // ===== STATUS =====
+    else if (
+      topic === TOPICS.EMETEUR_STATUS ||
+      topic === TOPICS.RECEPTEUR_STATUS
+    ) {
+      const key =
+        topic === TOPICS.EMETEUR_STATUS
+          ? "emeteur_status"
+          : "recepteur_status";
 
-      await updateAppareil(payload);
-      if (payload.bat && payload.bat < 700) {
-        sendWebhook("BATTERIE_FAIBLE", payload);
+      cache[key] = payload;
+      io.emit(key, payload);
+
+      if (payload.id) {
+        await ensureAppareilExists(payload.id, payload);
+        await updateAppareil(payload);
       }
 
-      console.log("🔋 Status émetteur :", payload);
-    }
+      if (topic === TOPICS.EMETEUR_STATUS && payload.bat && payload.bat < 700) {
+        await sendWebhook("BATTERIE_FAIBLE", payload);
+      }
 
-    // ===== RECEPTEUR STATUS =====
-    else if (topic === TOPICS.RECEPTEUR_STATUS) {
-      cache.recepteur_status = payload;
-      io.emit("recepteur_status", payload);
-      console.log("📡 Status récepteur :", payload);
+      console.log(`🔋 Status ${key} :`, payload);
     }
 
   } catch (err) {
@@ -158,15 +159,19 @@ mqttClient.on('message', async (topic, message) => {
 
 // ================= API ========================
 app.get('/', (req, res) => {
-  res.json({
-    status: "API OK",
-    lastUpdate: cache.lastUpdate
-  });
+  res.json({ status: "API OK", lastUpdate: cache.lastUpdate });
 });
 
 app.get('/api/passage', (req, res) => {
   res.json(cache.passage);
 });
+
+// ================= WEBHOOK TEST =================
+app.post('/webhook/test', (req, res) => {
+  console.log("🧪 WEBHOOK REÇU :", req.body);
+  res.json({ ok: true, received: req.body });
+});
+
 
 // ================= SERVER =====================
 server.listen(PORT, '0.0.0.0', () => {
@@ -175,46 +180,53 @@ server.listen(PORT, '0.0.0.0', () => {
 
 // ================= BDD ========================
 
-// ===== passages (METIER) =====
-async function savePassage(passage) {
+// ===== passages =====
+async function savePassage(payload) {
   await pool.query(
-    `INSERT INTO passages (appareil_id, type, date_heure)
-     VALUES ($1, $2, $3)`,
-    [passage.appareil_id, passage.type, passage.date_heure]
-  );
-}
-
-// ===== log_passages (TECHNIQUE) =====
-async function saveLogPassage(payload) {
-  await pool.query(
-    `INSERT INTO log_passages (
-      capteur_id,
-      capteur,
-      type_passage,
-      mode_passage,
-      ts
+    `INSERT INTO passages (
+      appareil_id,
+      type,
+      faisceau,
+      duree,
+      date_heure
     )
-    VALUES ($1, $2, $3, $4, $5)`,
+    VALUES ($1, $2, $3, $4, NOW())`,
     [
-      payload.id,
-      payload.capteur || "UNKNOWN",
+      payload.appareil_id,
       payload.type,
-      payload.mode,
-      payload.ts || Date.now()
+      payload.faisceau,
+      payload.duree
     ]
   );
 }
+
+
 
 // ===== oscillo =====
 async function saveOscillo(payload) {
   await pool.query(
     `INSERT INTO logs_oscillo (appareil_id, payload, timestamp)
      VALUES ($1, $2, NOW())`,
-    [payload.id || "UNKNOWN", payload]
+    [payload.id, payload]
   );
 }
 
-// ===== update appareils =====
+// ===== appareils =====
+async function ensureAppareilExists(appareilId, meta = {}) {
+  if (!appareilId) return;
+
+  await pool.query(
+    `INSERT INTO appareils (id, batterie, frequence, derniere_vu)
+     VALUES ($1, $2, $3, NOW())
+     ON CONFLICT (id) DO NOTHING`,
+    [
+      appareilId,
+      meta.bat || null,
+      meta.freq || null
+    ]
+  );
+}
+
 async function updateAppareil(payload) {
   await pool.query(
     `UPDATE appareils
@@ -222,6 +234,10 @@ async function updateAppareil(payload) {
          frequence = $2,
          derniere_vu = NOW()
      WHERE id = $3`,
-    [payload.bat, payload.freq, payload.id]
+    [
+      payload.bat || null,
+      payload.freq || null,
+      payload.id
+    ]
   );
 }
