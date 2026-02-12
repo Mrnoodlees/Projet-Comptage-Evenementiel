@@ -10,8 +10,13 @@ import Chart from 'chart.js/auto'
 
 const canvas = ref(null)
 let chart = null
+let lastLabels = []
+let lastData = []
 
 const render = (labels, data) => {
+  lastLabels = labels
+  lastData = data
+
   chart?.destroy()
 
   chart = new Chart(canvas.value, {
@@ -48,7 +53,10 @@ const render = (labels, data) => {
   })
 }
 
-defineExpose({ render })
+const toImageDataUrl = () => chart?.toBase64Image?.() || null
+const getDataset = () => ({ labels: lastLabels, data: lastData })
+
+defineExpose({ render, toImageDataUrl, getDataset })
 
 onUnmounted(() => chart?.destroy())
 </script>

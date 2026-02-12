@@ -325,6 +325,7 @@ const handleLoginSuccess = () => {
   sessionStorage.removeItem(QR_ACCESS_VERSION_KEY)
 }
 
+
 watch(accessViaQr, (value) => {
   if (value) isAdmin.value = false
 })
