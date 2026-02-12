@@ -19,7 +19,7 @@
     <header>
       <h1>Supervision – Comptage</h1>
 
-      <span class="status-battery" :class="statusBatteryClass">
+      <span v-if="!accessViaQr" class="status-battery" :class="statusBatteryClass">
         {{ batteryStatus }}
       </span>
 
@@ -48,7 +48,7 @@
         <p>{{ exits }}</p>
       </div>
 
-      <div class="card">
+      <div v-if="!accessViaQr" class="card">
         <h3>Batterie</h3>
         <p>{{ battery }}%</p>
       </div>
@@ -64,6 +64,10 @@
     </section>
 
     <PeopleChart ref="chartRef" />
+
+    <div class="pmr-summary">
+      PMR présents : {{ pmrPeople }}
+    </div>
     <PassageHistory v-if="!accessViaQr" ref="historyRef" />
 
     <footer>
@@ -105,6 +109,7 @@ const battery = ref(100)
 const maxPeople = ref(100)
 const timestamp = ref('-')
 const batteryStatus = ref('BATTERIE OK')
+const pmrPeople = ref(0)
 
 /* ================== REFS ================== */
 const chartRef = ref(null)
@@ -144,6 +149,9 @@ const hydrateFromApi = async () => {
         battery.value = Number(state.battery)
         batteryStatus.value =
           battery.value < 30 ? 'BATTERIE FAIBLE' : 'BATTERIE OK'
+      }
+      if (state.pmrPeople !== undefined) {
+        pmrPeople.value = Number(state.pmrPeople)
       }
       if (state.maxPeople !== undefined) maxPeople.value = Number(state.maxPeople)
       saveCounters()
@@ -200,6 +208,9 @@ const refreshStateFromApi = async () => {
         battery.value = Number(state.battery)
         batteryStatus.value =
           battery.value < 30 ? 'BATTERIE FAIBLE' : 'BATTERIE OK'
+      }
+      if (state.pmrPeople !== undefined) {
+        pmrPeople.value = Number(state.pmrPeople)
       }
       if (state.maxPeople !== undefined) maxPeople.value = Number(state.maxPeople)
       timestamp.value = new Date().toLocaleTimeString()
@@ -407,4 +418,13 @@ const peopleStatus = computed(() => {
 </script>
 
 <style scoped>
+.pmr-summary {
+  margin: 10px 0 6px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  font-size: 0.9rem;
+  color: #e2e8f0;
+}
 </style>

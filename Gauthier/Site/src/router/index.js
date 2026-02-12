@@ -1,7 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
 import Dashboard from '@/views/Dashboard.vue'
-import PublicInfluence from '@/views/PublicInfluence.vue'
+import QrOnly from '@/views/QrOnly.vue'
 
 const routes = [
   {
@@ -11,8 +11,8 @@ const routes = [
   },
   {
     path: '/',
-    name: 'PublicInfluence',
-    component: () => import('@/views/PublicInfluence.vue')
+    name: 'home',
+    component: QrOnly
   }
 ]
 

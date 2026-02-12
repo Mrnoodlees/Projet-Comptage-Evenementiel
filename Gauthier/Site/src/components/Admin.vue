@@ -13,10 +13,10 @@
     </header>
 
     <!-- ================= MODE ADMIN ================= -->
-    <section v-if="mode === 'main'" class="cards">
+    <section v-if="mode === 'main'" class="cards admin-cards">
 
       <!-- Capacité max -->
-      <div class="card">
+      <div class="card door-card">
         <h3>Capacité maximale</h3>
 
         <input
@@ -79,6 +79,50 @@
         </button>
       </div>
 
+      <!-- Portes -->
+      <div class="card">
+        <h3>Portes</h3>
+        <p class="qr-hint">Entrées / sorties par porte et marquage PMR.</p>
+
+        <div v-if="isLoadingDoors" class="door-empty">Chargement...</div>
+        <div v-else-if="doorError" class="door-empty">{{ doorError }}</div>
+        <div v-else-if="!doorStats.length" class="door-empty">Aucune porte détectée</div>
+
+        <div v-else class="door-list">
+          <div v-for="door in doorStats" :key="door.door" class="door-row">
+            <div class="door-main">
+              <div class="door-name">{{ door.door }}</div>
+              <div class="door-battery">Batterie : {{ formatBattery(door.battery) }}</div>
+            </div>
+            <div class="door-metrics">
+              <span>Entrées : {{ door.entries }}</span>
+              <span>Sorties : {{ door.exits }}</span>
+              <span>Présents : {{ door.people }}</span>
+            </div>
+            <label class="door-pmr">
+              <input
+                type="checkbox"
+                :checked="door.is_pmr"
+                @change="togglePmr(door)"
+              />
+              PMR
+            </label>
+          </div>
+        </div>
+
+        <div v-if="hasLoadedDoors" class="door-meta">
+          <span>MAJ : {{ lastDoorUpdate }}</span>
+          <span v-if="isRefreshingDoors">Actualisation...</span>
+        </div>
+
+        <div v-if="pmrSummary" class="door-summary">
+          <strong>PMR</strong>
+          <span>Entrées : {{ pmrSummary.entries }}</span>
+          <span>Sorties : {{ pmrSummary.exits }}</span>
+          <span>Présents : {{ pmrSummary.people }}</span>
+        </div>
+      </div>
+
       <!-- QR Admin -->
       <div class="card">
         <h3>Accès Admin (QR)</h3>
@@ -115,7 +159,7 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import QRCode from 'qrcode'
 import InfluenceView from '@/components/InfluenceView.vue'
 
@@ -146,6 +190,14 @@ const qrExpiresAt = ref(null)
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || window.location.origin
 const isResettingAccess = ref(false)
 const resetMessage = ref('')
+const doorStats = ref([])
+const pmrSummary = ref(null)
+const isLoadingDoors = ref(false)
+const doorError = ref('')
+const hasLoadedDoors = ref(false)
+const isRefreshingDoors = ref(false)
+const lastDoorUpdate = ref('')
+let doorTimer = null
 
 /* ================== WATCH ================== */
 watch(
@@ -241,6 +293,63 @@ const resetQrAccess = async () => {
   }
 }
 
+/* ================== PORTES ================== */
+const loadDoorStats = async () => {
+  const isFirstLoad = !hasLoadedDoors.value
+  if (isFirstLoad) {
+    isLoadingDoors.value = true
+  } else {
+    isRefreshingDoors.value = true
+  }
+  doorError.value = ''
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/dashboard/door-stats`)
+    if (!response.ok) {
+      doorError.value = 'Impossible de charger les portes'
+      return
+    }
+
+    const payload = await response.json()
+    doorStats.value = payload.doors || []
+    pmrSummary.value = payload.pmr || { entries: 0, exits: 0, people: 0 }
+    hasLoadedDoors.value = true
+    lastDoorUpdate.value = new Date().toLocaleTimeString()
+  } catch {
+    doorError.value = 'Impossible de charger les portes'
+  } finally {
+    isLoadingDoors.value = false
+    isRefreshingDoors.value = false
+  }
+}
+
+const togglePmr = async (door) => {
+  const nextValue = !door.is_pmr
+  door.is_pmr = nextValue
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/admin/door-pmr`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ doorId: door.door, isPmr: nextValue })
+    })
+
+    if (!response.ok) {
+      door.is_pmr = !nextValue
+    } else {
+      loadDoorStats()
+    }
+  } catch {
+    door.is_pmr = !nextValue
+  }
+}
+
+const formatBattery = (value) => {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return '--'
+  return `${numeric}%`
+}
+
 /* ================== NAV ================== */
 const handleBack = () => {
   if (mode.value === 'influence') {
@@ -249,6 +358,18 @@ const handleBack = () => {
     emit('back')
   }
 }
+
+onMounted(() => {
+  loadDoorStats()
+  doorTimer = setInterval(loadDoorStats, 5 * 1000)
+})
+
+onBeforeUnmount(() => {
+  if (doorTimer) {
+    clearInterval(doorTimer)
+    doorTimer = null
+  }
+})
 </script>
 
 <style scoped>
@@ -290,5 +411,109 @@ const handleBack = () => {
   margin-top: 8px;
   font-size: 12px;
   color: #dc2626;
+}
+
+.admin-cards {
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+}
+
+.admin-cards .card {
+  min-height: 210px;
+}
+
+.door-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.door-card {
+  text-align: left;
+}
+
+@media (min-width: 1100px) {
+  .door-card {
+    grid-column: span 2;
+  }
+}
+
+.door-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.door-name {
+  font-weight: 600;
+}
+
+.door-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.door-battery {
+  font-size: 0.78rem;
+  color: #94a3b8;
+}
+
+.door-metrics {
+  display: flex;
+  gap: 10px;
+  font-size: 0.8rem;
+  color: #cbd5e1;
+  flex-wrap: wrap;
+}
+
+.door-pmr {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: #cbd5e1;
+}
+
+.door-summary {
+  margin-top: 12px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+  color: #e2e8f0;
+}
+
+.door-meta {
+  margin-top: 10px;
+  display: flex;
+  gap: 12px;
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.door-empty {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  margin-top: 8px;
+}
+
+@media (max-width: 720px) {
+  .door-row {
+    grid-template-columns: 1fr;
+    align-items: flex-start;
+  }
+
+  .door-metrics {
+    flex-direction: column;
+  }
+
+  .door-meta {
+    flex-direction: column;
+  }
 }
 </style>

@@ -22,14 +22,30 @@
 
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import InfluenceChart from '@/components/InfluenceChart.vue'
 
 const chartRef = ref(null)
 const status = ref('loading')
+const isAllowed = ref(false)
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || window.location.origin
 let refreshTimer = null
+const route = useRoute()
+const router = useRouter()
+const PUBLIC_ACCESS_KEY = 'public_access_v1'
+
+const verifyPublicToken = async (token) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/admin/public-verify?token=${encodeURIComponent(token)}`)
+    if (!response.ok) return false
+    const payload = await response.json()
+    return Boolean(payload?.ok)
+  } catch {
+    return false
+  }
+}
 
 const toHourLabel = (value) =>
   new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -73,6 +89,7 @@ const buildChart = (rows, from, to, base) => {
 }
 
 const loadInfluence = async () => {
+  if (!isAllowed.value) return
   status.value = 'loading'
 
   const now = new Date()
@@ -101,8 +118,31 @@ const loadInfluence = async () => {
 }
 
 onMounted(() => {
-  loadInfluence()
-  refreshTimer = setInterval(loadInfluence, 5 * 1000)
+  const alreadyAllowed = sessionStorage.getItem(PUBLIC_ACCESS_KEY) === '1'
+  if (alreadyAllowed) {
+    isAllowed.value = true
+    loadInfluence()
+    refreshTimer = setInterval(loadInfluence, 5 * 1000)
+    return
+  }
+
+  const token = route.query.public_token
+  if (typeof token !== 'string') {
+    router.replace('/dashboard')
+    return
+  }
+
+  verifyPublicToken(token).then(ok => {
+    if (!ok) {
+      router.replace('/dashboard')
+      return
+    }
+
+    sessionStorage.setItem(PUBLIC_ACCESS_KEY, '1')
+    isAllowed.value = true
+    loadInfluence()
+    refreshTimer = setInterval(loadInfluence, 5 * 1000)
+  })
 })
 
 onBeforeUnmount(() => {
