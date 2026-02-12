@@ -15,20 +15,34 @@ const render = (labels, data) => {
   chart?.destroy()
 
   chart = new Chart(canvas.value, {
-    type: 'bar',
+    type: 'line',
     data: {
       labels,
       datasets: [{
-        label: 'Passages / heure',
+        label: 'Personnes présentes',
         data,
-        backgroundColor: '#2563eb'
+        borderColor: '#3b82f6',
+        backgroundColor: 'rgba(59,130,246,0.2)',
+        borderWidth: 2.5,
+        tension: 0.4,
+        pointRadius: 0,
+        fill: true
       }]
     },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
       plugins: { legend: { display: false } },
       scales: {
-        y: { beginAtZero: true }
+        x: {
+          ticks: { color: '#cbd5e1' },
+          grid: { drawBorder: false, color: 'rgba(255,255,255,0.08)' }
+        },
+        y: {
+          beginAtZero: true,
+          ticks: { stepSize: 1, precision: 0, color: '#cbd5e1' },
+          grid: { drawBorder: false, color: 'rgba(255,255,255,0.08)' }
+        }
       }
     }
   })

@@ -1,6 +1,6 @@
 <template>
   <!-- LOGIN -->
-  <Login v-if="!isAuthenticated" @success="isAuthenticated = true" />
+  <Login v-if="!isAuthenticated && !isCheckingAccess" @success="handleLoginSuccess" />
 
   <!-- ADMIN -->
   <Admin
@@ -27,7 +27,7 @@
         {{ peopleStatus }}
       </span>
 
-      <button class="admin-btn" @click="isAdmin = true">
+      <button v-if="!accessViaQr" class="admin-btn" @click="isAdmin = true">
         Admin
       </button>
     </header>
@@ -60,10 +60,11 @@
           <span class="capacity-value">{{ maxPeople }}</span>
         </div>
       </div>
+
     </section>
 
     <PeopleChart ref="chartRef" />
-    <PassageHistory ref="historyRef" />
+    <PassageHistory v-if="!accessViaQr" ref="historyRef" />
 
     <footer>
       MAJ : {{ timestamp }}
@@ -72,7 +73,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { io } from 'socket.io-client'
 
 import Login from '@/components/Login.vue'
@@ -91,6 +92,10 @@ const API_BASE_URL =
 /* ================== AUTH ================== */
 const isAuthenticated = ref(false)
 const isAdmin = ref(false)
+const accessViaQr = ref(false)
+const QR_ACCESS_KEY = 'qr_access_v1'
+const QR_ACCESS_VERSION_KEY = 'qr_access_version'
+const isCheckingAccess = ref(true)
 
 /* ================== DATA ================== */
 const people = ref(0)
@@ -105,41 +110,19 @@ const batteryStatus = ref('BATTERIE OK')
 const chartRef = ref(null)
 const historyRef = ref(null)
 let socket = null
+let refreshTimer = null
 
 /* ================== ANTI DOUBLE PAR PORTE ================== */
 const lastPassageByDoor = {}
 
 /* ================== PERSISTENCE ================== */
-const loadCounters = () => {
-  const saved = localStorage.getItem(STORAGE_COUNTERS)
-  if (saved) {
-    const data = JSON.parse(saved)
-    people.value = data.people ?? 0
-    entries.value = data.entries ?? 0
-    exits.value = data.exits ?? 0
-  }
-}
+const loadCounters = () => {}
 
-const saveCounters = () => {
-  localStorage.setItem(
-    STORAGE_COUNTERS,
-    JSON.stringify({ people: people.value, entries: entries.value, exits: exits.value })
-  )
-}
+const saveCounters = () => {}
 
-const loadChart = () => {
-  const saved = localStorage.getItem(STORAGE_CHART)
-  if (saved && chartRef.value) {
-    const data = JSON.parse(saved)
-    data.forEach(d => chartRef.value.addValue(d.people, d.maxPeople))
-  }
-}
+const loadChart = () => {}
 
-const saveChart = () => {
-  if (!chartRef.value) return
-  const values = chartRef.value.getValues()
-  localStorage.setItem(STORAGE_CHART, JSON.stringify(values))
-}
+const saveChart = () => {}
 
 /* ================== API ================== */
 const fetchJson = async (path, options = {}) => {
@@ -170,23 +153,24 @@ const hydrateFromApi = async () => {
     console.warn('API dashboard/state indisponible', err)
   }
 
-  if (!localStorage.getItem(STORAGE_CHART) && chartRef.value) {
+  if (chartRef.value) {
     try {
       const rows = await fetchJson('/api/dashboard/people-chart')
+      chartRef.value.reset()
       rows.forEach(row => {
         const peopleValue = Number(row.people)
         if (!Number.isFinite(peopleValue)) return
         chartRef.value.addValue(peopleValue, maxPeople.value)
       })
-      saveChart()
     } catch (err) {
       console.warn('API dashboard/people-chart indisponible', err)
     }
   }
 
-  if (!localStorage.getItem(STORAGE_HISTORY) && historyRef.value) {
+  if (historyRef.value) {
     try {
       const rows = await fetchJson('/api/passage?limit=100')
+      historyRef.value.resetHistory()
       const ordered = [...rows].reverse()
       ordered.forEach(row => {
         const dateValue = row.date_heure || row.ts
@@ -205,8 +189,91 @@ const hydrateFromApi = async () => {
   }
 }
 
+const refreshStateFromApi = async () => {
+  try {
+    const state = await fetchJson('/api/dashboard/state')
+    if (state) {
+      if (state.people !== undefined) people.value = Number(state.people)
+      if (state.entries !== undefined) entries.value = Number(state.entries)
+      if (state.exits !== undefined) exits.value = Number(state.exits)
+      if (state.battery !== undefined) {
+        battery.value = Number(state.battery)
+        batteryStatus.value =
+          battery.value < 30 ? 'BATTERIE FAIBLE' : 'BATTERIE OK'
+      }
+      if (state.maxPeople !== undefined) maxPeople.value = Number(state.maxPeople)
+      timestamp.value = new Date().toLocaleTimeString()
+    }
+  } catch (err) {
+    console.warn('API dashboard/state indisponible', err)
+  }
+}
+
+const refreshChartFromApi = async () => {
+  if (!chartRef.value) return
+
+  try {
+    const rows = await fetchJson('/api/dashboard/people-chart')
+    chartRef.value.reset()
+    rows.forEach(row => {
+      const peopleValue = Number(row.people)
+      if (!Number.isFinite(peopleValue)) return
+      chartRef.value.addValue(peopleValue, maxPeople.value)
+    })
+    saveChart()
+  } catch (err) {
+    console.warn('API dashboard/people-chart indisponible', err)
+  }
+}
+
 /* ================== SOCKET ================== */
+const verifyAdminToken = async (token) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/admin/verify?token=${encodeURIComponent(token)}`)
+    if (!response.ok) return null
+    return response.json()
+  } catch {
+    return null
+  }
+}
+
+const fetchAdminVersion = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/admin/version`)
+    if (!response.ok) return null
+    return response.json()
+  } catch {
+    return null
+  }
+}
+
 onMounted(async () => {
+  accessViaQr.value = sessionStorage.getItem(QR_ACCESS_KEY) === '1'
+  if (accessViaQr.value) {
+    isAuthenticated.value = true
+  }
+
+  const params = new URLSearchParams(window.location.search)
+  const token = params.get('admin_token')
+  if (token) {
+    const verifyResult = await verifyAdminToken(token)
+    if (verifyResult?.ok) {
+      accessViaQr.value = true
+      sessionStorage.setItem(QR_ACCESS_KEY, '1')
+      sessionStorage.setItem(QR_ACCESS_VERSION_KEY, String(verifyResult.version ?? 1))
+      isAuthenticated.value = true
+    }
+  } else if (accessViaQr.value) {
+    const storedVersion = Number(sessionStorage.getItem(QR_ACCESS_VERSION_KEY) || '0')
+    const versionResult = await fetchAdminVersion()
+    if (!versionResult || storedVersion !== Number(versionResult.version)) {
+      accessViaQr.value = false
+      sessionStorage.removeItem(QR_ACCESS_KEY)
+      sessionStorage.removeItem(QR_ACCESS_VERSION_KEY)
+    }
+  }
+  isCheckingAccess.value = false
+
   loadCounters()
   await nextTick()
   loadChart()
@@ -235,30 +302,62 @@ onMounted(async () => {
   socket.on('config', data => {
     if (data.maxPeople !== undefined) maxPeople.value = data.maxPeople
   })
+
+  refreshTimer = setInterval(() => {
+    refreshStateFromApi()
+    refreshChartFromApi()
+  }, 5 * 1000)
 })
 
-onBeforeUnmount(() => socket?.disconnect())
+onBeforeUnmount(() => {
+  socket?.disconnect()
+  if (refreshTimer) {
+    clearInterval(refreshTimer)
+    refreshTimer = null
+  }
+})
+
+/* ================== LOGIN ================== */
+const handleLoginSuccess = () => {
+  isAuthenticated.value = true
+  accessViaQr.value = false
+  sessionStorage.removeItem(QR_ACCESS_KEY)
+  sessionStorage.removeItem(QR_ACCESS_VERSION_KEY)
+}
+
+watch(accessViaQr, (value) => {
+  if (value) isAdmin.value = false
+})
 
 /* ================== PASSAGE HANDLER ================== */
 const handlePassage = (data) => {
-  if (data.type_passage !== 'FIN') return
+  const phase = data.type_passage ?? data.typePassage ?? data.phase
+  if (phase && phase !== 'FIN') return
 
   const now = Date.now()
-  const doorId = data.appareil_id
+  const doorId = data.appareil_id ?? data.capteur_id ?? data.capteur ?? data.id ?? 'UNKNOWN'
   if (!lastPassageByDoor[doorId]) lastPassageByDoor[doorId] = 0
   if (now - lastPassageByDoor[doorId] < 300) return
   lastPassageByDoor[doorId] = now
 
-  if (data.type === 'ENTREE') {
+  const passageType = data.type ?? data.mode_passage ?? data.mode
+  const passageDate =
+    data.date_heure ?? data.timestamp ?? data.ts ?? new Date().toISOString()
+
+  if (passageType === 'ENTREE') {
     entries.value++
     people.value++
-  } else if (data.type === 'SORTIE') {
+  } else if (passageType === 'SORTIE') {
     exits.value++
     people.value = Math.max(0, people.value - 1)
   }
 
   saveCounters()
-  historyRef.value?.addEntry(data)
+  historyRef.value?.addEntry({
+    date_heure: passageDate,
+    type: passageType,
+    appareil_id: doorId
+  })
   chartRef.value?.addValue(people.value, maxPeople.value)
   saveChart()
   timestamp.value = new Date().toLocaleTimeString()
@@ -306,4 +405,5 @@ const peopleStatus = computed(() => {
 })
 </script>
 
-<style src="./src/mainstyle.css"></style>
+<style scoped>
+</style>

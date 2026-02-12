@@ -29,20 +29,44 @@ const resolvePassageSource = async () => {
   tableCache.hasAppareils = Boolean(row.appareils)
 
   if (row.passage) {
+    const columns = await pool.query(`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'passage'
+    `)
+    const columnSet = new Set(columns.rows.map(rowItem => rowItem.column_name))
+    const dateColumn = columnSet.has('date_heure')
+      ? 'date_heure'
+      : columnSet.has('timestamp')
+        ? 'timestamp'
+        : 'date_heure'
+
     tableCache.passageSource = {
       table: 'passage',
       typeColumn: 'type',
-      dateColumn: 'date_heure',
+      dateColumn,
       extraWhere: ''
     }
     return tableCache.passageSource
   }
 
   if (row.passages) {
+    const columns = await pool.query(`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'passages'
+    `)
+    const columnSet = new Set(columns.rows.map(rowItem => rowItem.column_name))
+    const dateColumn = columnSet.has('date_heure')
+      ? 'date_heure'
+      : columnSet.has('timestamp')
+        ? 'timestamp'
+        : 'date_heure'
+
     tableCache.passageSource = {
       table: 'passages',
       typeColumn: 'type',
-      dateColumn: 'date_heure',
+      dateColumn,
       extraWhere: ''
     }
     return tableCache.passageSource

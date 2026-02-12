@@ -11,6 +11,7 @@ import passagesRoutes from './routes/passages.js'
 import dashboardRoutes from './routes/dashboard.js'
 import publicRoutes from './routes/public.js'
 import loginRoutes from './routes/login.js'
+import adminRoutes from './routes/admin.js'
 
 dotenv.config()
 
@@ -53,6 +54,7 @@ app.use('/api/passage', passagesRoutes)
 app.use('/api/dashboard', dashboardRoutes)
 app.use('/api/public', publicRoutes)
 app.use('/api/login', loginRoutes)
+app.use('/api/admin', adminRoutes)
 
 const toNumber = (value, fallback) => {
   const parsed = Number(value)
