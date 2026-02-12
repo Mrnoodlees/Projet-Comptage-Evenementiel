@@ -38,7 +38,8 @@ const TOPICS = {
   PASSAGE: "porte/passage",
   OSCILLO: "porte/oscillo/brut",
   EMETEUR_STATUS: "emeteur/status",
-  RECEPTEUR_STATUS: "recepteur/status"
+  RECEPTEUR_STATUS: "recepteur/status",
+  ALERTE: "porte/alerte"
 };
 
 // ================= HTTP + WS ==================
@@ -152,6 +153,43 @@ mqttClient.on('message', async (topic, message) => {
       console.log(`🔋 Status ${key} :`, payload);
     }
 
+    // ===== ALERTE =====
+else if (topic === TOPICS.ALERTE) {
+
+  console.log("🚨 ALERTE REÇUE :", payload);
+
+  if (!payload.id) {
+    console.warn("⚠️ Alerte ignorée : id manquant");
+    return;
+  }
+
+  const status = String(payload.status).toUpperCase();
+  const position = String(payload.position).toUpperCase();
+  const type = String(payload.type).toUpperCase();
+  const duree_totale = Number(payload.duree_totale);
+
+  if (isNaN(duree_totale)) {
+    console.warn("⚠️ Alerte ignorée : durée invalide");
+    return;
+  }
+
+  await ensureAppareilExists(payload.id);
+
+  await saveAlerte({
+    appareil_id: payload.id,
+    status,
+    position,
+    type,
+    duree_totale,
+    timestamp: payload.timestamp
+  });
+
+  await sendWebhook("ALERTE", payload);
+
+  console.log("✅ Alerte enregistrée en BDD");
+}
+
+
   } catch (err) {
     console.error("❌ Erreur MQTT :", err.message);
   }
@@ -241,3 +279,31 @@ async function updateAppareil(payload) {
     ]
   );
 }
+
+// ===== alertes =====
+async function saveAlerte(payload) {
+
+  // Conversion timestamp ESP (seconds) → JS Date
+  const dateEsp = new Date(payload.timestamp * 1000);
+
+  await pool.query(
+    `INSERT INTO alertes (
+      appareil_id,
+      status,
+      position,
+      type,
+      duree_totale,
+      timestamp_esp
+    )
+    VALUES ($1, $2, $3, $4, $5, $6)`,
+    [
+      payload.appareil_id,
+      payload.status,
+      payload.position,
+      payload.type,
+      payload.duree_totale,
+      dateEsp
+    ]
+  );
+}
+
