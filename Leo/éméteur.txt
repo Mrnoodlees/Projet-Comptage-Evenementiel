@@ -1,0 +1,248 @@
+#include <ESP8266WiFi.h>
+#include <ESPAsyncWebServer.h>
+#include <PubSubClient.h>
+#include <EEPROM.h>
+#include <ESP8266mDNS.h>
+
+// --- CONFIGURATION MATÉRIELLE ---
+const int PIN_IR = 4; // Pin D2 (GPIO 4)
+
+struct Config {
+  char ssid[32];
+  char password[64];
+  char deviceID[20];
+  int frequence;  
+  int timeON;   
+  int timeOFF;  
+  char mqttServer[100];
+  int intervalBatSec;
+  int intervalDiscoSec; 
+  char webUser[20]; 
+  char webPass[20]; 
+  char staticIP[16];
+  char gateway[16];
+  char subnet[16];
+  bool useStaticIP;
+} settings;
+
+WiFiClient espClient;
+PubSubClient mqttClient(espClient);
+AsyncWebServer server(80);
+
+unsigned long lastBatMsg = 0;
+unsigned long lastDiscoMsg = 0;
+unsigned long lastBurst = 0; 
+bool irState = false;        
+bool portalMode = false;
+
+// Conversion String vers IPAddress
+IPAddress stringToIP(const char* s) {
+  IPAddress ip;
+  if (!ip.fromString(s)) {
+     return IPAddress(0,0,0,0);
+  }
+  return ip;
+}
+
+void saveConfig() {
+  EEPROM.begin(512);
+  EEPROM.put(0, settings);
+  EEPROM.write(500, 77); 
+  EEPROM.commit();
+  Serial.println("[EEPROM] Configuration sauvegardee !");
+}
+
+void loadConfig() {
+  EEPROM.begin(512);
+  EEPROM.get(0, settings);
+  if (EEPROM.read(500) != 77 || settings.intervalBatSec <= 0) {
+    Serial.println("[EEPROM] Initialisation par defaut...");
+    strcpy(settings.ssid, "votre_ssid");
+    strcpy(settings.password, "votre_mdp");
+    strcpy(settings.mqttServer, "178.32.107.35");
+    strcpy(settings.deviceID, "ESP_EMETTEUR_02");
+    settings.frequence = 38;
+    settings.timeON = 300;  
+    settings.timeOFF = 1000; 
+    settings.intervalBatSec = 10;
+    settings.intervalDiscoSec = 3600; 
+    strcpy(settings.webUser, "admin");
+    strcpy(settings.webPass, "admin123");
+    strcpy(settings.staticIP, "192.168.1.100");
+    strcpy(settings.gateway, "192.168.1.1");
+    strcpy(settings.subnet, "255.255.255.0");
+    settings.useStaticIP = false;
+    saveConfig();
+  } else {
+    Serial.println("[EEPROM] Configuration chargee.");
+  }
+}
+
+void sendDiscovery() {
+  if (mqttClient.connected()) {
+    String mdnsURL = "http://" + String(settings.deviceID) + ".local";
+    String payload = "{\"id\":\"" + String(settings.deviceID) + "\",\"url\":\"" + mdnsURL + "\",\"type\":\"emeteur\",\"status\":\"online\"}";
+    mqttClient.publish("emeteur/discovery", payload.c_str(), true);
+  }
+}
+
+void callback(char* topic, byte* payload, unsigned int length) {
+  String msg = "";
+  for (unsigned int i = 0; i < length; i++) msg += (char)payload[i];
+  if (msg.indexOf("\"target\":\"" + String(settings.deviceID) + "\"") > -1) {
+    if (msg.indexOf("\"cmd\":\"RENAME\"") > -1) {
+      int start = msg.indexOf("\"new_id\":\"") + 10;
+      int end = msg.indexOf("\"", start);
+      String newID = msg.substring(start, end);
+      if (newID.length() > 0 && newID.length() < 20) {
+        strncpy(settings.deviceID, newID.c_str(), 19);
+        saveConfig();
+        ESP.restart();
+      }
+    }
+  }
+}
+
+void reconnectMQTT() {
+  if (!mqttClient.connected()) {
+    if (mqttClient.connect(settings.deviceID, "leo", "test")) {
+      mqttClient.subscribe("porte/control"); 
+      sendDiscovery();
+    }
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  delay(500);
+  loadConfig();
+
+  pinMode(PIN_IR, OUTPUT);
+  analogWriteRange(1023); 
+  analogWriteFreq(settings.frequence * 1000);
+  
+  // --- CONFIGURATION WIFI ---
+  WiFi.persistent(false);
+  WiFi.disconnect();
+  WiFi.mode(WIFI_STA);
+
+  if(settings.useStaticIP) {
+    IPAddress ip = stringToIP(settings.staticIP);
+    IPAddress gw = stringToIP(settings.gateway);
+    IPAddress sn = stringToIP(settings.subnet);
+    // On passe GW en 4eme argument pour le DNS
+    if (!WiFi.config(ip, gw, sn, gw)) {
+      Serial.println("[WiFi] Erreur de config IP Fixe !");
+    } else {
+      Serial.println("[WiFi] Configuration IP Fixe appliquee.");
+    }
+  }
+
+  WiFi.begin(settings.ssid, settings.password);
+
+  int retry = 0;
+  while (WiFi.status() != WL_CONNECTED && retry < 20) { 
+    delay(500); retry++; Serial.print(".");
+  }
+
+  if (WiFi.status() != WL_CONNECTED) {
+    portalMode = true;
+    WiFi.mode(WIFI_AP);
+    WiFi.softAP("CONFIG_EMETTEUR", "admin123");
+    Serial.println("\n[WiFi] ECHEC -> Mode Portail (192.168.4.1)");
+  } else {
+    Serial.print("\n[WiFi] CONNECTE ! IP: "); Serial.println(WiFi.localIP());
+    mqttClient.setServer(settings.mqttServer, 1883);
+    mqttClient.setCallback(callback);
+    if (MDNS.begin(settings.deviceID)) {
+       Serial.println("[mDNS] http://" + String(settings.deviceID) + ".local active");
+    }
+  }
+
+  // --- INTERFACE WEB ---
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+    if(!request->authenticate(settings.webUser, settings.webPass))
+        return request->requestAuthentication();
+
+    String h = "<html><body style='font-family:sans-serif; text-align:center; background:#1a1a1a; color:white;'>";
+    h += "<h2>Configuration " + String(settings.deviceID) + "</h2>";
+    h += "<form action='/save' method='POST' style='display:inline-block; text-align:left; background:#333; padding:20px; border-radius:10px;'>";
+    h += "<b>Identite</b><br>ID:<br><input name='id' value='"+String(settings.deviceID)+"'><br><br>";
+    h += "<b>WiFi & MQTT</b><br>SSID:<br><input name='s' value='"+String(settings.ssid)+"'><br>";
+    h += "Pass:<br><input type='password' name='p' value='"+String(settings.password)+"'><br>";
+    h += "Broker:<br><input name='m' value='"+String(settings.mqttServer)+"'><br><br>";
+    h += "<b>Configuration IP</b><br>";
+    h += "<input type='checkbox' name='uip' " + String(settings.useStaticIP ? "checked" : "") + "> Utiliser IP Fixe<br>";
+    h += "IP:<br><input name='ip' value='"+String(settings.staticIP)+"'><br>";
+    h += "GW:<br><input name='gw' value='"+String(settings.gateway)+"'><br>";
+    h += "Mask:<br><input name='sn' value='"+String(settings.subnet)+"'><br><br>";
+    h += "<b>Signal IR</b><br>Freq (kHz):<br><input type='number' name='f' value='"+String(settings.frequence)+"'><br>";
+    h += "ON/OFF (us):<br><input name='ton' size='4' value='"+String(settings.timeON)+"'> / <input name='toff' size='4' value='"+String(settings.timeOFF)+"'><br><br>";
+    h += "<input type='submit' value='SAUVEGARDER & REBOOT' style='width:100%; background:green; color:white; border:none; padding:10px; border-radius:5px;'>";
+    h += "</form></body></html>";
+    request->send(200, "text/html", h);
+  });
+
+  server.on("/save", HTTP_POST, [](AsyncWebServerRequest *request){
+    if(!request->authenticate(settings.webUser, settings.webPass)) return request->requestAuthentication();
+    
+    if(request->hasParam("id", true)) strncpy(settings.deviceID, request->getParam("id", true)->value().c_str(), 19);
+    if(request->hasParam("s", true)) strncpy(settings.ssid, request->getParam("s", true)->value().c_str(), 31);
+    if(request->hasParam("p", true)) strncpy(settings.password, request->getParam("p", true)->value().c_str(), 63);
+    if(request->hasParam("m", true)) strncpy(settings.mqttServer, request->getParam("m", true)->value().c_str(), 99);
+    if(request->hasParam("ip", true)) strncpy(settings.staticIP, request->getParam("ip", true)->value().c_str(), 15);
+    if(request->hasParam("gw", true)) strncpy(settings.gateway, request->getParam("gw", true)->value().c_str(), 15);
+    if(request->hasParam("sn", true)) strncpy(settings.subnet, request->getParam("sn", true)->value().c_str(), 15);
+    
+    settings.useStaticIP = request->hasParam("uip", true);
+    if(request->hasParam("f", true)) settings.frequence = request->getParam("f", true)->value().toInt();
+    if(request->hasParam("ton", true)) settings.timeON = request->getParam("ton", true)->value().toInt();
+    if(request->hasParam("toff", true)) settings.timeOFF = request->getParam("toff", true)->value().toInt();
+
+    saveConfig();
+    request->send(200, "text/plain", "OK ! Reboot...");
+    delay(2000); ESP.restart();
+  });
+
+  server.begin();
+}
+
+void loop() {
+  // CRUCIAL : yield() redonne la main au systeme pour gerer le WiFi et le Web
+  yield(); 
+
+  if (!portalMode) MDNS.update();
+
+  // --- SIGNAL IR ---
+  unsigned long currentMicros = micros();
+  unsigned long interval = irState ? (unsigned long)settings.timeON : (unsigned long)settings.timeOFF;
+  if (currentMicros - lastBurst >= interval) {
+    lastBurst = currentMicros;
+    irState = !irState;
+    analogWrite(PIN_IR, irState ? 512 : 0);
+  }
+
+  // --- MQTT & STATUS ---
+  if (!portalMode && WiFi.status() == WL_CONNECTED) {
+    if (!mqttClient.connected()) {
+      static unsigned long lastReconnect = 0;
+      if (millis() - lastReconnect > 5000) {
+        lastReconnect = millis();
+        reconnectMQTT();
+      }
+    } else {
+      mqttClient.loop();
+      unsigned long now = millis();
+      if (now - lastBatMsg > ((unsigned long)settings.intervalBatSec * 1000)) { 
+        lastBatMsg = now;
+        int vPourcent = constrain(map(analogRead(A0), 450, 600, 0, 100), 0, 100); 
+        String payload = "{\"id\":\"" + String(settings.deviceID) + "\",\"bat\":" + String(vPourcent) + "}";
+        mqttClient.publish("emeteur/status", payload.c_str());
+      }
+      if (now - lastDiscoMsg > ((unsigned long)settings.intervalDiscoSec * 1000)) {
+        lastDiscoMsg = now;
+        sendDiscovery();
+      }
+    }
+  }
+}
