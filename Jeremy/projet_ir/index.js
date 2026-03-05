@@ -39,7 +39,10 @@ const TOPICS = {
   OSCILLO: "porte/oscillo/brut",
   EMETEUR_STATUS: "emeteur/status",
   RECEPTEUR_STATUS: "recepteur/status",
-  ALERTE: "porte/alerte"
+  ALERTE: "porte/alerte",
+  EMETEUR_URL: "emeteur/discovery",
+  RECEPTEUR_URL: "recepteur/discovery",
+  LED1: "wled/porte1/battery"
 };
 
 // ================= HTTP + WS ==================
@@ -79,11 +82,58 @@ async function sendWebhook(event, data) {
   }
 }
 
+// ================= API GO =================
+async function sendToGo(event, data) {
 
+  try {
+
+    await axios.post(
+      "http://178.32.107.35:3000/webhook/test",
+      {
+        event,
+        timestamp: Date.now(),
+        data
+      }
+    );
+
+    console.log(`📤 Envoyé au collègue : ${event}`);
+
+  } catch (err) {
+
+    console.error("❌ Erreur envoi collègue :", err.message);
+
+  }
+
+}
 
 // ================= MQTT MESSAGE ===============
 mqttClient.on('message', async (topic, message) => {
   try {
+
+    // ===== LED BATTERY =====
+    if (topic === TOPICS.LED1) {
+
+      const batterie = Number(message.toString());
+
+      if (isNaN(batterie)) {
+        console.warn("⚠️ Batterie LED invalide");
+        return;
+      }
+
+      await saveLedBattery({
+        appareil_id: "PORTE_01",
+        batterie
+      });
+
+      await sendToGo("LED_BATTERY", {
+        id: "PORTE_01",
+        batterie
+      });
+
+      console.log("🔋 Batterie LED enregistrée :", batterie);
+      return;
+    }
+
     const payload = JSON.parse(message.toString());
     cache.lastUpdate = new Date();
 
@@ -106,7 +156,7 @@ mqttClient.on('message', async (topic, message) => {
       cache.passage = passageMetier;
       io.emit("passage", passageMetier);
 
-      await ensureAppareilExists(payload.id);
+      await ensureAppareilExists(payload.id, payload);
       await savePassage(passageMetier);
       await sendWebhook("PASSAGE", passageMetier);
 
@@ -119,7 +169,7 @@ mqttClient.on('message', async (topic, message) => {
       io.emit("oscillo", payload);
 
       if (payload.id) {
-        await ensureAppareilExists(payload.id);
+        await ensureAppareilExists(payload.id, payload);
         await saveOscillo(payload);
       } else {
         console.warn("⚠️ Oscillo reçu sans id appareil");
@@ -146,49 +196,73 @@ mqttClient.on('message', async (topic, message) => {
         await updateAppareil(payload);
       }
 
-      if (topic === TOPICS.EMETEUR_STATUS && payload.bat && payload.bat < 700) {
+      if (topic === TOPICS.EMETEUR_STATUS && payload.bat && payload.bat < 20) {
         await sendWebhook("BATTERIE_FAIBLE", payload);
       }
 
       console.log(`🔋 Status ${key} :`, payload);
     }
 
+    // ===== NDNS DISCOVERY =====
+    else if (
+      topic === TOPICS.EMETEUR_URL ||
+      topic === TOPICS.RECEPTEUR_URL
+    ) {
+
+      if (!payload.id || !payload.url) {
+        console.warn("⚠️ Discovery ignoré : id/url manquant");
+        return;
+      }
+
+      await ensureAppareilExists(payload.id, payload);
+
+      await saveNDNS({
+        id: payload.id,
+        url: payload.url,
+        type: payload.type,
+        status: payload.status || null
+      });
+
+      await sendToGo("NDNS_DISCOVERY", payload);
+
+      console.log("🌐 NDNS enregistré :", payload);
+    }
+
     // ===== ALERTE =====
-else if (topic === TOPICS.ALERTE) {
+    else if (topic === TOPICS.ALERTE) {
 
-  console.log("🚨 ALERTE REÇUE :", payload);
+      console.log("🚨 ALERTE REÇUE :", payload);
 
-  if (!payload.id) {
-    console.warn("⚠️ Alerte ignorée : id manquant");
-    return;
-  }
+      if (!payload.id) {
+        console.warn("⚠️ Alerte ignorée : id manquant");
+        return;
+      }
 
-  const status = String(payload.status).toUpperCase();
-  const position = String(payload.position).toUpperCase();
-  const type = String(payload.type).toUpperCase();
-  const duree_totale = Number(payload.duree_totale);
+      const status = String(payload.status).toUpperCase();
+      const position = String(payload.position).toUpperCase();
+      const type = String(payload.type).toUpperCase();
+      const duree_totale = Number(payload.duree_totale);
 
-  if (isNaN(duree_totale)) {
-    console.warn("⚠️ Alerte ignorée : durée invalide");
-    return;
-  }
+      if (isNaN(duree_totale)) {
+        console.warn("⚠️ Alerte ignorée : durée invalide");
+        return;
+      }
 
-  await ensureAppareilExists(payload.id);
+      await ensureAppareilExists(payload.id, payload);
 
-  await saveAlerte({
-    appareil_id: payload.id,
-    status,
-    position,
-    type,
-    duree_totale,
-    timestamp: payload.timestamp
-  });
+      await saveAlerte({
+        appareil_id: payload.id,
+        status,
+        position,
+        type,
+        duree_totale,
+        timestamp: payload.timestamp
+      });
 
-  await sendWebhook("ALERTE", payload);
+      await sendWebhook("ALERTE", payload);
 
-  console.log("✅ Alerte enregistrée en BDD");
-}
-
+      console.log("✅ Alerte enregistrée en BDD");
+    }
 
   } catch (err) {
     console.error("❌ Erreur MQTT :", err.message);
@@ -209,7 +283,6 @@ app.post('/webhook/test', (req, res) => {
   console.log("🧪 WEBHOOK REÇU :", req.body);
   res.json({ ok: true, received: req.body });
 });
-
 
 // ================= SERVER =====================
 server.listen(PORT, '0.0.0.0', () => {
@@ -238,8 +311,6 @@ async function savePassage(payload) {
   );
 }
 
-
-
 // ===== oscillo =====
 async function saveOscillo(payload) {
   await pool.query(
@@ -249,18 +320,74 @@ async function saveOscillo(payload) {
   );
 }
 
+// ===== LED BATTERY =====
+async function saveLedBattery(payload) {
+
+  await pool.query(
+    `INSERT INTO led_battery (appareil_id, batterie, timestamp)
+     VALUES ($1, $2, NOW())`,
+    [
+      payload.appareil_id,
+      payload.batterie
+    ]
+  );
+
+}
+
+// ===== NDNS =====
+async function saveNDNS(payload) {
+
+  await pool.query(
+    `INSERT INTO ndns (id, url, type, status, timestamp)
+     VALUES ($1, $2, $3, $4, NOW())
+     ON CONFLICT (id)
+     DO UPDATE SET
+       url = EXCLUDED.url,
+       type = EXCLUDED.type,
+       status = EXCLUDED.status,
+       timestamp = NOW()`,
+    [
+      payload.id,
+      payload.url,
+      payload.type,
+      payload.status
+    ]
+  );
+
+}
+
 // ===== appareils =====
 async function ensureAppareilExists(appareilId, meta = {}) {
+
   if (!appareilId) return;
 
   await pool.query(
-    `INSERT INTO appareils (id, batterie, frequence, derniere_vu)
-     VALUES ($1, $2, $3, NOW())
-     ON CONFLICT (id) DO NOTHING`,
+    `INSERT INTO appareils (
+      id,
+      batterie,
+      sensibilite,
+      frequence,
+      role_f,
+      role_b,
+      timestamp
+    )
+    VALUES ($1,$2,$3,$4,$5,$6,NOW())
+
+    ON CONFLICT (id) DO UPDATE SET
+      batterie = COALESCE(EXCLUDED.batterie, appareils.batterie),
+      sensibilite = COALESCE(EXCLUDED.sensibilite, appareils.sensibilite),
+      frequence = COALESCE(EXCLUDED.frequence, appareils.frequence),
+      role_f = COALESCE(EXCLUDED.role_f, appareils.role_f),
+      role_b = COALESCE(EXCLUDED.role_b, appareils.role_b),
+      timestamp = NOW()
+    `,
     [
       appareilId,
       meta.bat || null,
-      meta.freq || null
+      meta.sensibilite || null,
+      meta.freq || null,
+      meta.role_f || null,
+      meta.role_b || null
     ]
   );
 }
@@ -283,7 +410,6 @@ async function updateAppareil(payload) {
 // ===== alertes =====
 async function saveAlerte(payload) {
 
-  // Conversion timestamp ESP (seconds) → JS Date
   const dateEsp = new Date(payload.timestamp * 1000);
 
   await pool.query(
@@ -306,4 +432,3 @@ async function saveAlerte(payload) {
     ]
   );
 }
-
