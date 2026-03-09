@@ -2,6 +2,7 @@ import { pool } from './db.js'
 
 let ensured = false
 
+// Stores door-level flags such as PMR.
 export const ensureDoorSettingsTable = async () => {
   if (ensured) return
   await pool.query(`

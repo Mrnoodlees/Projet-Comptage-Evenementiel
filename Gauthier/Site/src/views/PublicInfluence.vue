@@ -25,8 +25,11 @@ import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import InfluenceChart from '@/components/InfluenceChart.vue'
 
+// Chart reference for rendering.
 const chartRef = ref(null)
+// UI status: loading, ready, empty, error.
 const status = ref('loading')
+// Access granted only via QR token.
 const isAllowed = ref(false)
 
 const API_BASE_URL =
@@ -50,6 +53,7 @@ const verifyPublicToken = async (token) => {
 const toHourLabel = (value) =>
   new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
+// Build hourly cumulative series from API rows.
 const buildHourlySeries = (rows, from, to, base = 0) => {
   const map = new Map(rows.map(row => [new Date(row.heure).getTime(), row]))
   const labels = []
@@ -88,6 +92,7 @@ const buildChart = (rows, from, to, base) => {
   status.value = 'ready'
 }
 
+// Fetch and render public influence data.
 const loadInfluence = async () => {
   if (!isAllowed.value) return
   status.value = 'loading'

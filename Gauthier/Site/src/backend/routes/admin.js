@@ -1,9 +1,11 @@
 import express from 'express'
+import { pool } from '../db.js'
 import { upsertDoorSetting } from '../doorSettings.js'
 import { createQrToken, verifyQrToken, resetQrTokens } from '../qrTokens.js'
 
 const router = express.Router()
 
+// Incremented to invalidate client-side QR sessions.
 let accessVersion = 1
 
 router.post('/qr', async (_req, res) => {
@@ -59,6 +61,80 @@ router.post('/door-pmr', async (req, res) => {
     return res.json({ ok: true })
   } catch (err) {
     return res.status(500).json({ message: 'Impossible de mettre à jour la porte.' })
+  }
+})
+
+router.get('/appareils', async (_req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT
+        id,
+        batterie,
+        sensibilite,
+        frequence,
+        role_f,
+        role_b,
+        timestamp,
+        derniere_vu,
+        temps_bloque
+      FROM appareils
+      ORDER BY id
+    `)
+    return res.json(rows)
+  } catch (err) {
+    return res.status(500).json({ message: 'Impossible de charger les appareils.' })
+  }
+})
+
+router.patch('/appareils/:id', async (req, res) => {
+  const { id } = req.params
+  const allowed = ['sensibilite', 'role_f', 'role_b', 'temps_bloque']
+  const updates = []
+  const values = []
+
+  allowed.forEach((key) => {
+    if (req.body[key] === undefined) return
+    let value = req.body[key]
+    if (value === '') value = null
+    updates.push(`${key} = $${values.length + 1}`)
+    values.push(value)
+  })
+
+  if (updates.length === 0) {
+    return res.status(400).json({ message: 'Aucune valeur à mettre à jour.' })
+  }
+
+  values.push(id)
+
+  try {
+    await pool.query(
+      `UPDATE appareils SET ${updates.join(', ')} WHERE id = $${values.length}`,
+      values
+    )
+    return res.json({ ok: true })
+  } catch (err) {
+    return res.status(500).json({ message: 'Impossible de mettre à jour l’appareil.' })
+  }
+})
+
+router.delete('/appareils/:id', async (req, res) => {
+  const { id } = req.params
+
+  if (!id) {
+    return res.status(400).json({ message: 'id manquant' })
+  }
+
+  try {
+    const result = await pool.query(
+      'DELETE FROM appareils WHERE id = $1',
+      [id]
+    )
+    if (result.rowCount === 0) {
+      return res.status(404).json({ message: 'Appareil introuvable' })
+    }
+    return res.json({ ok: true })
+  } catch (err) {
+    return res.status(500).json({ message: 'Impossible de supprimer l’appareil.' })
   }
 })
 

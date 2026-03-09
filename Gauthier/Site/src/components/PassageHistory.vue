@@ -119,4 +119,27 @@ defineExpose({
   font-size: 14px;
   color: #94a3b8;
 }
+
+@media (max-width: 600px) {
+  .history-list li {
+    flex-wrap: wrap;
+    gap: 6px;
+    font-size: 12px;
+  }
+
+  .time {
+    width: 60px;
+  }
+
+  .door {
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .type {
+    margin-left: 0;
+  }
+}
 </style>

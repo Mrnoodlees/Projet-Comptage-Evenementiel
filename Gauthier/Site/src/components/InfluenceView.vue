@@ -1,6 +1,6 @@
 <template>
   <div class="cards">
-    <InfluenceFilter @apply="generate" />
+    <InfluenceFilter class="filter-card" @apply="generate" />
 
     <div class="card export-card">
       <h3>Export</h3>
@@ -16,7 +16,8 @@
       </div>
     </div>
 
-    <InfluenceChart ref="chartRef" />
+    <div v-if="chartTitle" class="chart-title">{{ chartTitle }}</div>
+    <InfluenceChart class="chart-card" ref="chartRef" />
   </div>
 </template>
 
@@ -25,8 +26,12 @@ import { ref, computed } from 'vue'
 import InfluenceFilter from './InfluenceFilter.vue'
 import InfluenceChart from './InfluenceChart.vue'
 
+// Chart instance reference.
 const chartRef = ref(null)
+const chartTitle = ref('')
+// Cached dataset for export.
 const lastDataset = ref({ labels: [], data: [] })
+// Cached date range for export filenames.
 const lastRange = ref(null)
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || window.location.origin
 
@@ -35,6 +40,7 @@ const canExport = computed(() => (lastDataset.value.labels || []).length > 0)
 const toHourLabel = (value) =>
   new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
+// Convert API rows into hourly cumulative counts.
 const buildHourlySeries = (rows, from, to, base = 0) => {
   const map = new Map(rows.map(row => [new Date(row.heure).getTime(), row]))
   const labels = []
@@ -61,6 +67,7 @@ const buildHourlySeries = (rows, from, to, base = 0) => {
   return { labels, data }
 }
 
+// Fetch influence data and render the chart.
 const generate = async ({ from, to }) => {
   const url = new URL(`${API_BASE_URL}/api/public/influence`)
   url.searchParams.set('from', from.toISOString())
@@ -75,6 +82,9 @@ const generate = async ({ from, to }) => {
     const rows = payload.rows || []
     const base = Number(payload.base || 0)
     const { labels, data } = buildHourlySeries(rows, from, to, base)
+    chartTitle.value = from.toDateString() === to.toDateString()
+      ? `Journée du ${from.toLocaleDateString()}`
+      : `Du ${from.toLocaleDateString()} au ${to.toLocaleDateString()}`
     chartRef.value?.render(labels, data)
     lastDataset.value = { labels, data }
     lastRange.value = { from, to }
@@ -99,6 +109,7 @@ const buildFileName = (extension) => {
   return `influence_${formatStamp(new Date())}.${extension}`
 }
 
+// Export chart image with axes and white background.
 const exportPng = () => {
   const dataUrl = chartRef.value?.toImageDataUrl?.()
   if (!dataUrl) return
@@ -110,6 +121,7 @@ const exportPng = () => {
   link.remove()
 }
 
+// Export data as CSV.
 const exportCsv = () => {
   const { labels = [], data = [] } = lastDataset.value || {}
   if (!labels.length) return
@@ -151,5 +163,20 @@ const exportCsv = () => {
 
 .export-actions .admin-btn {
   margin-left: 0;
+}
+
+.filter-card {
+  grid-column: 1 / -1;
+}
+
+.chart-card {
+  grid-column: 1 / -1;
+}
+
+.chart-title {
+  grid-column: 1 / -1;
+  font-size: 0.9rem;
+  color: #e2e8f0;
+  margin-top: 6px;
 }
 </style>

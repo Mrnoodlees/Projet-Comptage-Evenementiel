@@ -26,7 +26,7 @@ const whiteBackgroundPlugin = {
   }
 }
 
-const render = (labels, data) => {
+const render = (labels, data, options = {}) => {
   lastLabels = labels
   lastData = data
 
@@ -57,7 +57,13 @@ const render = (labels, data) => {
       },
       scales: {
         x: {
-          ticks: { color: '#cbd5e1' },
+          ticks: {
+            color: '#cbd5e1',
+            autoSkip: true,
+            maxTicksLimit: 12,
+            maxRotation: 45,
+            minRotation: 0
+          },
           grid: { drawBorder: false, color: 'rgba(255,255,255,0.08)' },
           title: { display: false }
         },

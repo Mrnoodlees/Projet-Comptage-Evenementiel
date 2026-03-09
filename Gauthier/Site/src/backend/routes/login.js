@@ -8,12 +8,13 @@ router.post('/', async (req, res) => {
   const requestId = req.requestId || 'no-id'
 
   if (!username || !password) {
-    console.warn(`⚠️  [${requestId}] Login manquant`)
+    console.warn(`[${requestId}] Login manquant`)
     return res.status(400).json({ message: 'Identifiants manquants' })
   }
 
   try {
-    console.log(`🔐 [${requestId}] Tentative login user="${username}"`)
+    // Auth check against the login table.
+    console.log(`[${requestId}] Tentative login user="${username}"`)
     const { rows } = await pool.query(
       `
         SELECT id, username
@@ -25,14 +26,14 @@ router.post('/', async (req, res) => {
     )
 
     if (rows.length === 0) {
-      console.warn(`❌ [${requestId}] Login refusé user="${username}"`)
+      console.warn(`[${requestId}] Login refusé user="${username}"`)
       return res.status(401).json({ message: 'Identifiants incorrects' })
     }
 
-    console.log(`✅ [${requestId}] Login OK user="${username}"`)
+    console.log(`[${requestId}] Login OK user="${username}"`)
     return res.json({ id: rows[0].id, username: rows[0].username })
   } catch (err) {
-    console.error(`❌ [${requestId}] Erreur login`, err.message)
+    console.error(`[${requestId}] Erreur login`, err.message)
     return res.status(500).json({ message: 'Connexion impossible pour le moment.' })
   }
 })

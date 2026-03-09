@@ -116,14 +116,14 @@ router.get('/influence', async (req, res) => {
   const requestId = req.requestId || 'no-id'
 
   if (!from || !to) {
-    console.warn(`⚠️  [${requestId}] Public influence: from/to manquant`)
+    console.warn(`[${requestId}] Public influence: from/to manquant`)
     return res.status(400).json({ message: 'Paramètres from/to manquants.' })
   }
 
   try {
     const source = await resolveInfluenceSource()
     if (!source) {
-      console.warn(`⚠️  [${requestId}] Public influence: aucune table`)
+      console.warn(`[${requestId}] Public influence: aucune table`)
       return res.status(500).json({ message: 'Aucune table de passages trouvée.' })
     }
 
@@ -143,7 +143,7 @@ router.get('/influence', async (req, res) => {
       [from, to]
     )
 
-    console.log(`🌍 [${requestId}] Public influence rows=${result.rows.length}`)
+    console.log(`[${requestId}] Public influence rows=${result.rows.length}`)
     if (!includeBase) {
       return res.json(result.rows)
     }
@@ -165,7 +165,7 @@ router.get('/influence', async (req, res) => {
 
     return res.json({ base: basePeople, rows: result.rows })
   } catch (err) {
-    console.error(`❌ [${requestId}] Public influence erreur`, err.message)
+    console.error(`[${requestId}] Public influence erreur`, err.message)
     return res.status(500).json({ message: 'Erreur influence.' })
   }
 })

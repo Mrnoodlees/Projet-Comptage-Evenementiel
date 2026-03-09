@@ -11,6 +11,7 @@ const toNumber = (value, fallback) => {
 
 const getEnv = (key, fallback) => process.env[key] || fallback
 
+// Switch DB host/port to local tunnel when enabled.
 const sshTunnelEnabled = process.env.SSH_TUNNEL_ENABLED === 'true'
 const tunnelLocalHost = process.env.SSH_TUNNEL_LOCAL_HOST || '127.0.0.1'
 const tunnelLocalPort = toNumber(process.env.SSH_TUNNEL_LOCAL_PORT, 5432)
@@ -39,7 +40,7 @@ const shouldLogQueries = process.env.LOG_SQL === 'true'
 const shouldLogDbConfig = process.env.LOG_DB_CONFIG === 'true'
 
 pool.on('error', (err) => {
-  console.error('❌ BDD erreur inattendue', err.message)
+  console.error('BDD erreur inattendue', err.message)
 })
 
 pool.on('connect', (client) => {
@@ -47,16 +48,16 @@ pool.on('connect', (client) => {
   const lockTimeoutMs = toNumber(process.env.DB_LOCK_TIMEOUT_MS, 5000)
   client
     .query(`SET statement_timeout TO ${statementTimeoutMs}`)
-    .catch((err) => console.error('❌ BDD statement_timeout', err.message))
+    .catch((err) => console.error('BDD statement_timeout', err.message))
   client
     .query(`SET lock_timeout TO ${lockTimeoutMs}`)
-    .catch((err) => console.error('❌ BDD lock_timeout', err.message))
+    .catch((err) => console.error('BDD lock_timeout', err.message))
 })
 
 if (shouldLogDbConfig) {
   const mode = sshTunnelEnabled ? 'tunnel' : 'direct'
   console.log(
-    `🗄️  BDD (${mode}) -> host=${dbConfig.host} port=${dbConfig.port} db=${dbConfig.database} user=${dbConfig.user} connectTimeout=${dbConnectTimeoutMs}ms queryTimeout=${dbQueryTimeoutMs}ms`
+    `BDD (${mode}) -> host=${dbConfig.host} port=${dbConfig.port} db=${dbConfig.database} user=${dbConfig.user} connectTimeout=${dbConnectTimeoutMs}ms queryTimeout=${dbQueryTimeoutMs}ms`
   )
 }
 
@@ -68,12 +69,12 @@ if (shouldLogQueries) {
     try {
       const result = await originalQuery(...args)
       const duration = Date.now() - startedAt
-      console.log(`🗄️  [SQL] ${duration}ms ${text.replace(/\s+/g, ' ').trim()}`)
+      console.log(`[SQL] ${duration}ms ${text.replace(/\s+/g, ' ').trim()}`)
       return result
     } catch (err) {
       const duration = Date.now() - startedAt
-      console.error(`❌ [SQL] ${duration}ms ${text.replace(/\s+/g, ' ').trim()}`)
-      console.error('❌ [SQL] erreur', err.message)
+      console.error(`[SQL] ${duration}ms ${text.replace(/\s+/g, ' ').trim()}`)
+      console.error('[SQL] erreur', err.message)
       throw err
     }
   }

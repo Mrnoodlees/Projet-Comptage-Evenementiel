@@ -9,6 +9,7 @@
 </template>
 
 <script setup>
+// Static page for QR-only access.
 </script>
 
 <style scoped>

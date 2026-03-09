@@ -79,8 +79,18 @@
         </button>
       </div>
 
-      <!-- Portes -->
+      <!-- Appareils -->
       <div class="card">
+        <h3>Appareils</h3>
+        <p class="qr-hint">Modifier les paramètres des capteurs.</p>
+
+        <button class="admin-btn" @click="mode = 'devices'">
+          Gérer les appareils
+        </button>
+      </div>
+
+      <!-- Portes -->
+      <div class="card door-card">
         <h3>Portes</h3>
         <p class="qr-hint">Entrées / sorties par porte et marquage PMR.</p>
 
@@ -151,8 +161,55 @@
     </section>
 
     <!-- ================= MODE ANALYSE ================= -->
-    <section v-else>
+    <section v-else-if="mode === 'influence'">
       <InfluenceView />
+    </section>
+
+    <!-- ================= MODE APPAREILS ================= -->
+    <section v-else-if="mode === 'devices'" class="devices">
+      <div class="card devices-card">
+        <h3>Paramètres des appareils</h3>
+
+        <div v-if="deviceLoading" class="door-empty">Chargement...</div>
+        <div v-else-if="deviceError" class="door-empty">{{ deviceError }}</div>
+
+        <div v-else class="devices-table">
+          <div class="devices-head">
+            <span>Id</span>
+            <span>Sensibilité</span>
+            <span>Role F</span>
+            <span>Role B</span>
+            <span>Temps bloqué</span>
+            <span>Dernière vue</span>
+            <span></span>
+          </div>
+
+          <div v-for="device in devices" :key="device.id" class="devices-row">
+            <span class="device-id">{{ device.id }}</span>
+            <input v-model.number="device.sensibilite" type="number" />
+            <select v-model="device.role_f">
+              <option value="">—</option>
+              <option value="ENTREE">ENTREE</option>
+              <option value="SORTIE">SORTIE</option>
+            </select>
+            <select v-model="device.role_b">
+              <option value="">—</option>
+              <option value="ENTREE">ENTREE</option>
+              <option value="SORTIE">SORTIE</option>
+            </select>
+            <input v-model.number="device.temps_bloque" type="number" />
+            <span class="device-date">{{ formatDate(device.derniere_vu) }}</span>
+            <div class="device-actions">
+              <button class="admin-btn" @click="saveDevice(device)" :disabled="device._saving">
+                {{ device._saving ? '...' : 'Enregistrer' }}
+              </button>
+              <button class="admin-btn danger" @click="deleteDevice(device)" :disabled="device._saving">
+                Supprimer
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </section>
 
   </div>
@@ -179,9 +236,13 @@ const props = defineProps({
 })
 
 /* ================== STATE ================== */
+// Toggles between admin controls, influence view, and device editor.
 const mode = ref('main')
+// Local input state for max capacity.
 const localMaxPeople = ref(props.maxPeople)
+// Number of fake passages to generate.
 const generatedCount = ref(1)
+// QR content for admin access.
 const adminUrl = ref('')
 const qrDataUrl = ref('')
 const qrError = ref('')
@@ -190,6 +251,7 @@ const qrExpiresAt = ref(null)
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || window.location.origin
 const isResettingAccess = ref(false)
 const resetMessage = ref('')
+// Aggregated stats per door.
 const doorStats = ref([])
 const pmrSummary = ref(null)
 const isLoadingDoors = ref(false)
@@ -198,6 +260,9 @@ const hasLoadedDoors = ref(false)
 const isRefreshingDoors = ref(false)
 const lastDoorUpdate = ref('')
 let doorTimer = null
+const devices = ref([])
+const deviceLoading = ref(false)
+const deviceError = ref('')
 
 /* ================== WATCH ================== */
 watch(
@@ -294,6 +359,7 @@ const resetQrAccess = async () => {
 }
 
 /* ================== PORTES ================== */
+// Fetch door stats and PMR summary from the API.
 const loadDoorStats = async () => {
   const isFirstLoad = !hasLoadedDoors.value
   if (isFirstLoad) {
@@ -323,6 +389,7 @@ const loadDoorStats = async () => {
   }
 }
 
+// Persist PMR flag for a given door.
 const togglePmr = async (door) => {
   const nextValue = !door.is_pmr
   door.is_pmr = nextValue
@@ -350,9 +417,81 @@ const formatBattery = (value) => {
   return `${numeric}%`
 }
 
+// Device table helpers.
+const formatDate = (value) => {
+  if (!value) return '-'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString()
+}
+
+const loadDevices = async () => {
+  deviceLoading.value = true
+  deviceError.value = ''
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/admin/appareils`)
+    if (!response.ok) {
+      deviceError.value = 'Impossible de charger les appareils'
+      return
+    }
+    devices.value = await response.json()
+  } catch {
+    deviceError.value = 'Impossible de charger les appareils'
+  } finally {
+    deviceLoading.value = false
+  }
+}
+
+const saveDevice = async (device) => {
+  device._saving = true
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/api/admin/appareils/${encodeURIComponent(device.id)}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sensibilite: device.sensibilite,
+          role_f: device.role_f,
+          role_b: device.role_b,
+          temps_bloque: device.temps_bloque
+        })
+      }
+    )
+    if (!response.ok) {
+      deviceError.value = 'Erreur de sauvegarde'
+    }
+  } catch {
+    deviceError.value = 'Erreur de sauvegarde'
+  } finally {
+    device._saving = false
+  }
+}
+
+const deleteDevice = async (device) => {
+  if (!confirm(`Supprimer l’appareil ${device.id} ?`)) return
+
+  device._saving = true
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/api/admin/appareils/${encodeURIComponent(device.id)}`,
+      { method: 'DELETE' }
+    )
+    if (!response.ok) {
+      deviceError.value = 'Erreur de suppression'
+      return
+    }
+    devices.value = devices.value.filter((item) => item.id !== device.id)
+  } catch {
+    deviceError.value = 'Erreur de suppression'
+  } finally {
+    device._saving = false
+  }
+}
+
 /* ================== NAV ================== */
 const handleBack = () => {
-  if (mode.value === 'influence') {
+  if (mode.value === 'influence' || mode.value === 'devices') {
     mode.value = 'main'
   } else {
     emit('back')
@@ -362,6 +501,12 @@ const handleBack = () => {
 onMounted(() => {
   loadDoorStats()
   doorTimer = setInterval(loadDoorStats, 5 * 1000)
+})
+
+watch(mode, (value) => {
+  if (value === 'devices') {
+    loadDevices()
+  }
 })
 
 onBeforeUnmount(() => {
@@ -500,6 +645,82 @@ onBeforeUnmount(() => {
   font-size: 0.8rem;
   color: #94a3b8;
   margin-top: 8px;
+}
+
+.devices-card {
+  text-align: left;
+}
+
+.devices-table {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.devices-head,
+.devices-row {
+  display: grid;
+  grid-template-columns: 1.4fr repeat(4, 1fr) 1.2fr 0.9fr;
+  gap: 8px;
+  align-items: center;
+}
+
+.devices-head {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  text-transform: uppercase;
+}
+
+.devices-row input,
+.devices-row select {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(15, 23, 42, 0.5);
+  color: #e2e8f0;
+}
+
+.device-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.admin-btn.danger {
+  background: rgba(220, 38, 38, 0.2);
+  border-color: rgba(220, 38, 38, 0.4);
+  color: #fecaca;
+}
+
+.admin-btn.danger:hover {
+  background: rgba(220, 38, 38, 0.35);
+}
+
+.device-id {
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.device-date {
+  font-size: 0.78rem;
+  color: #94a3b8;
+}
+
+@media (max-width: 1100px) {
+  .devices-head {
+    display: none;
+  }
+
+  .devices-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: rgba(15, 23, 42, 0.5);
+    border: 1px solid rgba(148, 163, 184, 0.12);
+  }
 }
 
 @media (max-width: 720px) {

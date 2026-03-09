@@ -15,6 +15,43 @@ const tableCache = {
   hasAppareils: false
 }
 
+let settingsEnsured = false
+
+const ensureSettingsTable = async () => {
+  if (settingsEnsured) return
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS dashboard_settings (
+      id integer PRIMARY KEY,
+      max_people integer NOT NULL,
+      updated_at timestamp without time zone DEFAULT NOW()
+    )
+  `)
+  settingsEnsured = true
+}
+
+const getMaxPeople = async () => {
+  await ensureSettingsTable()
+  const { rows } = await pool.query(`
+    SELECT max_people
+    FROM dashboard_settings
+    WHERE id = 1
+    LIMIT 1
+  `)
+  if (!rows.length) return DEFAULT_MAX_PEOPLE
+  const value = Number(rows[0].max_people)
+  return Number.isFinite(value) ? value : DEFAULT_MAX_PEOPLE
+}
+
+const setMaxPeople = async (value) => {
+  await ensureSettingsTable()
+  await pool.query(`
+    INSERT INTO dashboard_settings (id, max_people, updated_at)
+    VALUES (1, $1, NOW())
+    ON CONFLICT (id)
+    DO UPDATE SET max_people = EXCLUDED.max_people, updated_at = NOW()
+  `, [value])
+}
+
 const resolveDoorColumn = (columnSet) => {
   if (columnSet.has('appareil_id')) return 'appareil_id'
   if (columnSet.has('capteur_id')) return 'capteur_id'
@@ -115,6 +152,7 @@ const countByType = async (source, type) => {
   return Number(rows[0]?.count || 0)
 }
 
+// Aggregate PMR counts based on doors marked in door_settings.
 const getPmrSummary = async (source) => {
   if (!source.doorColumn) {
     return { entries: 0, exits: 0, people: 0 }
@@ -164,30 +202,60 @@ router.get('/state', async (req, res) => {
   try {
     const source = await resolvePassageSource()
     if (!source) {
-      console.warn(`⚠️  [${requestId}] Dashboard state: aucune table`)
+      console.warn(`[${requestId}] Dashboard state: aucune table`)
       return res.status(500).json({ message: 'Aucune table de passages trouvée.' })
     }
 
-    const [entries, exits, battery, pmr] = await Promise.all([
+    const [entries, exits, battery, pmr, maxPeople] = await Promise.all([
       countByType(source, TYPE_ENTREE),
       countByType(source, TYPE_SORTIE),
       getAverageBattery(),
-      getPmrSummary(source)
+      getPmrSummary(source),
+      getMaxPeople()
     ])
 
     const people = entries - exits
-    console.log(`📊 [${requestId}] Dashboard state entries=${entries} exits=${exits} people=${people}`)
+    console.log(`[${requestId}] Dashboard state entries=${entries} exits=${exits} people=${people}`)
 
     return res.json({
       people,
       entries,
       exits,
       battery,
-      maxPeople: DEFAULT_MAX_PEOPLE,
+      maxPeople,
       pmrPeople: pmr.people
     })
   } catch (err) {
-    console.error(`❌ [${requestId}] Dashboard state erreur`, err.message)
+    console.error(`[${requestId}] Dashboard state erreur`, err.message)
+    return res.sendStatus(500)
+  }
+})
+
+/* ================= MAX PEOPLE ================= */
+router.get('/max-people', async (req, res) => {
+  const requestId = req.requestId || 'no-id'
+  try {
+    const maxPeople = await getMaxPeople()
+    return res.json({ maxPeople })
+  } catch (err) {
+    console.error(`[${requestId}] Max people erreur`, err.message)
+    return res.sendStatus(500)
+  }
+})
+
+router.post('/max-people', async (req, res) => {
+  const requestId = req.requestId || 'no-id'
+  const value = Number(req.body?.maxPeople)
+
+  if (!Number.isFinite(value) || value <= 0) {
+    return res.status(400).json({ message: 'maxPeople invalide' })
+  }
+
+  try {
+    await setMaxPeople(Math.floor(value))
+    return res.json({ ok: true })
+  } catch (err) {
+    console.error(`[${requestId}] Max people update erreur`, err.message)
     return res.sendStatus(500)
   }
 })
@@ -198,7 +266,7 @@ router.get('/people-chart', async (req, res) => {
   try {
     const source = await resolvePassageSource()
     if (!source) {
-      console.warn(`⚠️  [${requestId}] People chart: aucune table`)
+      console.warn(`[${requestId}] People chart: aucune table`)
       return res.status(500).json({ message: 'Aucune table de passages trouvée.' })
     }
 
@@ -212,10 +280,10 @@ router.get('/people-chart', async (req, res) => {
       ORDER BY ${source.dateColumn}
     `)
 
-    console.log(`📈 [${requestId}] People chart rows=${rows.length}`)
+    console.log(`[${requestId}] People chart rows=${rows.length}`)
     return res.json(rows)
   } catch (err) {
-    console.error(`❌ [${requestId}] People chart erreur`, err.message)
+    console.error(`[${requestId}] People chart erreur`, err.message)
     return res.sendStatus(500)
   }
 })
@@ -226,12 +294,12 @@ router.get('/door-stats', async (req, res) => {
   try {
     const source = await resolvePassageSource()
     if (!source) {
-      console.warn(`⚠️  [${requestId}] Door stats: aucune table`)
+      console.warn(`[${requestId}] Door stats: aucune table`)
       return res.status(500).json({ message: 'Aucune table de passages trouvée.' })
     }
 
     if (!source.doorColumn) {
-      console.warn(`⚠️  [${requestId}] Door stats: aucune colonne porte`)
+      console.warn(`[${requestId}] Door stats: aucune colonne porte`)
       return res.status(500).json({ message: 'Aucune colonne de porte trouvée.' })
     }
 
@@ -279,10 +347,10 @@ router.get('/door-stats', async (req, res) => {
       { entries: 0, exits: 0, people: 0 }
     )
 
-    console.log(`🚪 [${requestId}] Door stats doors=${rows.length}`)
+    console.log(`[${requestId}] Door stats doors=${rows.length}`)
     return res.json({ doors: rows, pmr })
   } catch (err) {
-    console.error(`❌ [${requestId}] Door stats erreur`, err.message)
+    console.error(`[${requestId}] Door stats erreur`, err.message)
     return res.sendStatus(500)
   }
 })
@@ -293,15 +361,15 @@ router.get('/pmr', async (req, res) => {
   try {
     const source = await resolvePassageSource()
     if (!source) {
-      console.warn(`⚠️  [${requestId}] PMR: aucune table`)
+      console.warn(`[${requestId}] PMR: aucune table`)
       return res.status(500).json({ message: 'Aucune table de passages trouvée.' })
     }
 
     const pmr = await getPmrSummary(source)
-    console.log(`♿ [${requestId}] PMR entries=${pmr.entries} exits=${pmr.exits} people=${pmr.people}`)
+    console.log(`[${requestId}] PMR entries=${pmr.entries} exits=${pmr.exits} people=${pmr.people}`)
     return res.json(pmr)
   } catch (err) {
-    console.error(`❌ [${requestId}] PMR erreur`, err.message)
+    console.error(`[${requestId}] PMR erreur`, err.message)
     return res.sendStatus(500)
   }
 })
@@ -312,7 +380,7 @@ router.get('/influence', async (req, res) => {
   try {
     const source = await resolvePassageSource()
     if (!source) {
-      console.warn(`⚠️  [${requestId}] Influence: aucune table`)
+      console.warn(`[${requestId}] Influence: aucune table`)
       return res.status(500).json({ message: 'Aucune table de passages trouvée.' })
     }
 
@@ -327,10 +395,10 @@ router.get('/influence', async (req, res) => {
       ORDER BY hour
     `)
 
-    console.log(`📊 [${requestId}] Influence rows=${rows.length}`)
+    console.log(`[${requestId}] Influence rows=${rows.length}`)
     return res.json(rows)
   } catch (err) {
-    console.error(`❌ [${requestId}] Influence erreur`, err.message)
+    console.error(`[${requestId}] Influence erreur`, err.message)
     return res.sendStatus(500)
   }
 })

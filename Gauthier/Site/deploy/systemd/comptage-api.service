@@ -1,0 +1,13 @@
+[Unit]
+Description=Comptage API
+After=network.target
+
+[Service]
+WorkingDirectory=/home/gauthier/Documents/GitHub/Projet-Comptage-Evenementiel/Gauthier/Site
+ExecStart=/usr/bin/node src/backend/index.js
+Restart=always
+RestartSec=3
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

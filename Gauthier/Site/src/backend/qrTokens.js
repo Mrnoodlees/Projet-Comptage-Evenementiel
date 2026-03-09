@@ -3,6 +3,7 @@ import { pool } from './db.js'
 
 let ensured = false
 
+// Persistent QR tokens so links remain valid across restarts.
 const ensureTable = async () => {
   if (ensured) return
   await pool.query(`

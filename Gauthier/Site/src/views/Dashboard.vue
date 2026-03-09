@@ -7,7 +7,7 @@
     v-else-if="isAdmin"
     :maxPeople="maxPeople"
     :battery="battery"
-    @update:maxPeople="maxPeople = $event"
+    @update:maxPeople="updateMaxPeople"
     @resetCounters="resetCounters"
     @resetBattery="battery = 100"
     @generatePassage="handleGeneratedPassage"
@@ -118,6 +118,7 @@ let socket = null
 let refreshTimer = null
 
 /* ================== ANTI DOUBLE PAR PORTE ================== */
+// Debounce passages per door to avoid double counting.
 const lastPassageByDoor = {}
 
 /* ================== PERSISTENCE ================== */
@@ -237,6 +238,19 @@ const refreshChartFromApi = async () => {
   }
 }
 
+const updateMaxPeople = async (value) => {
+  maxPeople.value = Number(value)
+  try {
+    await fetchJson('/api/dashboard/max-people', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ maxPeople: maxPeople.value })
+    })
+  } catch (err) {
+    console.warn('API dashboard/max-people indisponible', err)
+  }
+}
+
 /* ================== SOCKET ================== */
 const verifyAdminToken = async (token) => {
   try {
@@ -292,7 +306,7 @@ onMounted(async () => {
 
   socket = io(SOCKET_URL)
 
-  socket.on('connect', () => console.log('✅ Socket connecté'))
+  socket.on('connect', () => console.log('Socket connecté'))
 
   socket.on('init', data => {
     maxPeople.value = data.maxPeople ?? maxPeople.value

@@ -15,7 +15,7 @@ router.post('/', async (req, res) => {
   const requestId = req.requestId || 'no-id'
 
   try {
-    console.log(`🧾 [${requestId}] POST /api/passage capteur_id=${capteur_id} mode=${mode_passage}`)
+    console.log(`[${requestId}] POST /api/passage capteur_id=${capteur_id} mode=${mode_passage}`)
     await pool.query(`
       INSERT INTO log_passages
         (capteur_id, capteur, type_passage, mode_passage, ts)
@@ -25,7 +25,7 @@ router.post('/', async (req, res) => {
 
     return res.sendStatus(201)
   } catch (err) {
-    console.error(`❌ [${requestId}] Erreur insertion passage`, err.message)
+    console.error(`[${requestId}] Erreur insertion passage`, err.message)
     return res.sendStatus(500)
   }
 })
@@ -38,7 +38,7 @@ router.get('/', async (req, res) => {
   const requestId = req.requestId || 'no-id'
 
   try {
-    console.log(`📥 [${requestId}] GET /api/passage limit=${limit}`)
+    console.log(`[${requestId}] GET /api/passage limit=${limit}`)
     const result = await pool.query(`
       SELECT *
       FROM log_passages
@@ -48,7 +48,7 @@ router.get('/', async (req, res) => {
 
     return res.json(result.rows)
   } catch (err) {
-    console.error(`❌ [${requestId}] Erreur lecture passages`, err.message)
+    console.error(`[${requestId}] Erreur lecture passages`, err.message)
     return res.status(500).json({ message: 'Impossible de récupérer les passages.' })
   }
 })

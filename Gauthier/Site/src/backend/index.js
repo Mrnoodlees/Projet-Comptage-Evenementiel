@@ -40,11 +40,11 @@ app.use((req, res, next) => {
   const requestId = crypto.randomUUID()
   req.requestId = requestId
 
-  console.log(`➡️  [${requestId}] ${req.method} ${req.originalUrl}`)
+  console.log(`[${requestId}] ${req.method} ${req.originalUrl}`)
 
   res.on('finish', () => {
     const durationMs = Date.now() - start
-    console.log(`⬅️  [${requestId}] ${res.statusCode} ${req.method} ${req.originalUrl} (${durationMs}ms)`)
+    console.log(`[${requestId}] ${res.statusCode} ${req.method} ${req.originalUrl} (${durationMs}ms)`)
   })
 
   next()
@@ -88,7 +88,7 @@ const startSshTunnel = () => {
         sshTunnelHost
       ]
 
-  console.log('🔐 Ouverture tunnel SSH...', sshTunnelHost)
+  console.log('Ouverture tunnel SSH...', sshTunnelHost)
 
   if (sshTunnelPassword) {
     sshTunnelProcess = spawn('sshpass', ['-p', sshTunnelPassword, 'ssh', ...args], {
@@ -100,18 +100,18 @@ const startSshTunnel = () => {
 
   sshTunnelProcess.on('error', (err) => {
     if (err.code === 'ENOENT' && sshTunnelPassword) {
-      console.error('❌ sshpass est requis pour utiliser SSH_TUNNEL_PASSWORD.')
-      console.error('➡️ Installe-le puis relance l’API : sudo apt install sshpass')
+      console.error('sshpass est requis pour utiliser SSH_TUNNEL_PASSWORD.')
+      console.error('Installe-le puis relance l’API : sudo apt install sshpass')
       return
     }
-    console.error('❌ Tunnel SSH erreur', err.message)
+    console.error('Tunnel SSH erreur', err.message)
   })
 
   sshTunnelProcess.on('exit', (code, signal) => {
     sshTunnelProcess = null
     if (shutdownRequested) return
 
-    console.warn('⚠️ Tunnel SSH fermé', { code, signal })
+    console.warn('Tunnel SSH fermé', { code, signal })
 
     if (sshReconnectTimer) return
     sshReconnectTimer = setTimeout(() => {
@@ -138,6 +138,7 @@ const io = new SocketIOServer(server, {
   }
 })
 
+// Cache last events so new clients get immediate state.
 const relayCache = {
   init: null,
   status: null,
@@ -146,7 +147,7 @@ const relayCache = {
 }
 
 io.on('connection', (socket) => {
-  console.log('🟢 Client frontend connecté', socket.id)
+  console.log('Client frontend connecté', socket.id)
 
   if (relayCache.init) socket.emit('init', relayCache.init)
   if (relayCache.status) socket.emit('status', relayCache.status)
@@ -154,7 +155,7 @@ io.on('connection', (socket) => {
   if (relayCache.passage) socket.emit('passage', relayCache.passage)
 
   socket.on('disconnect', (reason) => {
-    console.log('🔴 Client frontend déconnecté', socket.id, reason)
+    console.log('Client frontend déconnecté', socket.id, reason)
   })
 })
 
@@ -167,22 +168,22 @@ const sourceSocket = ioClient(sourceSocketUrl, {
 })
 
 sourceSocket.on('connect', () => {
-  console.log('✅ Relais connecté à la VPS', sourceSocketUrl)
+  console.log('Relais connecté à la VPS', sourceSocketUrl)
 })
 
 sourceSocket.on('connect_error', (err) => {
-  console.error('❌ Relais socket VPS erreur', err.message)
+  console.error('Relais socket VPS erreur', err.message)
 })
 
 sourceSocket.on('disconnect', (reason) => {
-  console.warn('⚠️ Relais socket VPS déconnecté', reason)
+  console.warn('Relais socket VPS déconnecté', reason)
 })
 
 const forwardEvent = (eventName) => {
   sourceSocket.on(eventName, (payload) => {
     relayCache[eventName] = payload
     if (eventName !== 'status') {
-      console.log(`📡 Relais event "${eventName}"`)
+      console.log(`Relais event "${eventName}"`)
     }
     io.emit(eventName, payload)
   })
@@ -193,8 +194,36 @@ forwardEvent('passage')
 forwardEvent('status')
 forwardEvent('config')
 
-process.on('SIGINT', stopSshTunnel)
-process.on('SIGTERM', stopSshTunnel)
+let isShuttingDown = false
+
+const shutdown = (signal) => {
+  if (isShuttingDown) return
+  isShuttingDown = true
+
+  console.log(`Arrêt API (${signal})`)
+  stopSshTunnel()
+
+  try {
+    sourceSocket?.close()
+  } catch {}
+
+  try {
+    io.close()
+  } catch {}
+
+  server.close(() => {
+    console.log('Serveur HTTP arrêté')
+    process.exit(0)
+  })
+
+  setTimeout(() => {
+    console.warn('Arrêt forcé après délai')
+    process.exit(1)
+  }, 5000)
+}
+
+process.on('SIGINT', () => shutdown('SIGINT'))
+process.on('SIGTERM', () => shutdown('SIGTERM'))
 
 server.listen(port, () => {
   console.log('API démarrée sur le port', port)

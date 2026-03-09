@@ -29,16 +29,20 @@ import { ref } from 'vue'
 
 const emit = defineEmits(['success'])
 
+// User credentials.
 const username = ref('')
 const password = ref('')
+// UI error message.
 const error = ref('')
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || ''
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ||
   (SOCKET_URL ? SOCKET_URL.replace(':3000', ':3001') : window.location.origin)
 const ALLOW_LOCAL_LOGIN = import.meta.env.VITE_ALLOW_LOCAL_LOGIN === 'true'
+// Optional local fallback for offline testing.
 const isLocalAdmin = (user, pass) => user === 'admin' && pass === 'admin'
 
+// Authenticate against the API (with optional local fallback).
 const login = async () => {
   error.value = ''
 

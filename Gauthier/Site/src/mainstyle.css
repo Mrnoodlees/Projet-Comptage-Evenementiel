@@ -214,3 +214,74 @@ footer {
     margin-left: 0;
   }
 }
+
+@media (max-width: 900px) {
+  .dashboard {
+    padding: 18px 14px 26px;
+  }
+
+  header {
+    gap: 8px;
+  }
+
+  header h1 {
+    width: 100%;
+    font-size: 1rem;
+  }
+
+  .status-battery,
+  .status-people {
+    font-size: 0.65rem;
+    padding: 5px 10px;
+  }
+
+  .cards {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+  }
+
+  .card {
+    padding: 12px 14px;
+  }
+
+  .card p {
+    font-size: 1.3rem;
+  }
+
+  .capacity-card .capacity-container {
+    font-size: 1.15rem;
+  }
+
+  .capacity-value {
+    padding: 10px 8px;
+  }
+}
+
+@media (max-width: 640px) {
+  .cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .card h3 {
+    font-size: 0.68rem;
+  }
+
+  .card p {
+    font-size: 1.2rem;
+  }
+
+  .capacity-indicator {
+    width: 10px;
+    height: 10px;
+  }
+}
+
+@media (max-width: 420px) {
+  .cards {
+    grid-template-columns: 1fr;
+  }
+
+  header {
+    padding: 10px 12px;
+  }
+}
