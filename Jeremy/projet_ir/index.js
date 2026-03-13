@@ -96,11 +96,11 @@ async function sendToGo(event, data) {
       }
     );
 
-    console.log(`📤 Envoyé au collègue : ${event}`);
+    console.log(`📤 Envoyé a Gauthier : ${event}`);
 
   } catch (err) {
 
-    console.error("❌ Erreur envoi collègue :", err.message);
+    console.error("❌ Erreur envoi Gauthier :", err.message);
 
   }
 
@@ -293,6 +293,9 @@ server.listen(PORT, '0.0.0.0', () => {
 
 // ===== passages =====
 async function savePassage(payload) {
+
+  try{
+    console.log("tentative d'insertion en BDD :", payload);
   await pool.query(
     `INSERT INTO passages (
       appareil_id,
@@ -309,6 +312,10 @@ async function savePassage(payload) {
       payload.duree
     ]
   );
+  console.log("Insertion en BDD réussie");
+  } catch (err) {
+    console.error("❌ Erreur insertion passage :", err.message);
+  }
 }
 
 // ===== oscillo =====
