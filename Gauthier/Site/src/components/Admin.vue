@@ -16,7 +16,7 @@
     <section v-if="mode === 'main'" class="cards admin-cards">
 
       <!-- Capacité max -->
-      <div class="card door-card">
+      <div class="card">
         <h3>Capacité maximale</h3>
 
         <input
@@ -26,7 +26,7 @@
           class="transparent-input"
         />
 
-        <button class="admin-btn" @click="saveMaxPeople">
+        <button class="admin-btn capacity-save" @click="saveMaxPeople">
           Enregistrer
         </button>
       </div>
@@ -35,30 +35,6 @@
       <div class="card">
         <h3>Batterie</h3>
         <p>{{ battery }}%</p>
-
-        <button class="admin-btn" @click="resetBattery">
-          Recharger batterie
-        </button>
-      </div>
-
-      <!-- Génération de données -->
-      <div class="card">
-        <h3>Génération de passages</h3>
-
-        <input
-          type="number"
-          min="1"
-          v-model.number="generatedCount"
-          class="transparent-input"
-        />
-
-        <button class="admin-btn" @click="generateEntries">
-          Générer entrées
-        </button>
-
-        <button class="admin-btn" @click="generateExits">
-          Générer sorties
-        </button>
       </div>
 
       <!-- Reset -->
@@ -524,6 +500,19 @@ onBeforeUnmount(() => {
   margin-bottom: 8px;
 }
 
+.qr-card {
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.qr-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .qr-preview {
   margin-top: 12px;
   display: flex;
@@ -566,6 +555,10 @@ onBeforeUnmount(() => {
   min-height: 210px;
 }
 
+.capacity-save {
+  margin-top: 12px;
+}
+
 .door-list {
   display: grid;
   gap: 10px;
@@ -578,6 +571,10 @@ onBeforeUnmount(() => {
 
 @media (min-width: 1100px) {
   .door-card {
+    grid-column: span 2;
+  }
+
+  .qr-card {
     grid-column: span 2;
   }
 }
