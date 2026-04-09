@@ -172,12 +172,12 @@ def on_message(client, userdata, msg):
                     # Réinitialisation des variables pour la prochaine détection
                     p["start_1"] = 0
                     p["bloque"] = False
-
     except Exception as e:
         print(f"❌ Erreur : {e}")
 
 # --- LANCEMENT DU PROGRAMME ---
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+
 client.username_pw_set("leo", "test") # Authentification MQTT
 client.on_connect = on_connect
 client.on_message = on_message
