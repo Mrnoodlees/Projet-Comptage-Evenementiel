@@ -1,12 +1,12 @@
 import express from 'express'
 import { pool } from '../db.js'
 import { upsertDoorSetting } from '../doorSettings.js'
-import { createQrToken, verifyQrToken, resetQrTokens } from '../qrTokens.js'
+import { createQrToken, verifyQrToken, resetQrTokens, listQrTokens } from '../qrTokens.js'
+import { bumpAccessVersion, getAccessVersion } from '../qrAccessVersion.js'
 
 const router = express.Router()
 
-// Incremented to invalidate client-side QR sessions.
-let accessVersion = 1
+const shouldRevokeQrTokens = () => process.env.QR_RESET_REVOKE !== 'false'
 
 router.post('/qr', async (_req, res) => {
   try {
@@ -17,18 +17,29 @@ router.post('/qr', async (_req, res) => {
   }
 })
 
+router.get('/qr-tokens', async (_req, res) => {
+  try {
+    const tokens = await listQrTokens('admin')
+    return res.json({ count: tokens.length })
+  } catch (err) {
+    return res.status(500).json({ message: 'Impossible de lire les tokens.' })
+  }
+})
+
 router.get('/version', (_req, res) => {
-  return res.json({ version: accessVersion })
+  return res.json({ version: getAccessVersion() })
 })
 
 router.post('/reset', async (_req, res) => {
-  accessVersion += 1
+  bumpAccessVersion()
   try {
-    await resetQrTokens('admin')
+    if (shouldRevokeQrTokens()) {
+      await resetQrTokens('admin')
+    }
   } catch {
     // Même si le reset DB échoue, on invalide les sessions locales
   }
-  return res.json({ version: accessVersion })
+  return res.json({ version: getAccessVersion() })
 })
 
 router.get('/verify', async (req, res) => {
@@ -43,7 +54,7 @@ router.get('/verify', async (req, res) => {
     if (!ok) {
       return res.status(401).json({ message: 'Token invalide' })
     }
-    return res.json({ ok: true, version: accessVersion })
+    return res.json({ ok: true, version: getAccessVersion() })
   } catch (err) {
     return res.status(500).json({ message: 'Erreur vérification token' })
   }

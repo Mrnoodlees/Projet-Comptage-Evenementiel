@@ -46,3 +46,13 @@ export const resetQrTokens = async (scope) => {
     WHERE scope = $1
   `, [scope])
 }
+
+export const listQrTokens = async (scope) => {
+  await ensureTable()
+  const { rows } = await pool.query(`
+    SELECT token
+    FROM qr_tokens
+    WHERE scope = $1 AND revoked = false
+  `, [scope])
+  return rows.map(row => row.token)
+}

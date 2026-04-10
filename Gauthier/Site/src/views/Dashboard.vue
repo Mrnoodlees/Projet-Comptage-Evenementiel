@@ -1,10 +1,16 @@
 <template>
+  <!-- QR ONLY (public mode) -->
+  <QrOnly v-if="PUBLIC_MODE && !accessViaQr && !isCheckingAccess" />
+
   <!-- LOGIN -->
-  <Login v-if="!isAuthenticated && !isCheckingAccess" @success="handleLoginSuccess" />
+  <Login
+    v-else-if="!PUBLIC_MODE && !isAuthenticated && !isCheckingAccess"
+    @success="handleLoginSuccess"
+  />
 
   <!-- ADMIN -->
   <Admin
-    v-else-if="isAdmin"
+    v-else-if="isAdmin && !PUBLIC_MODE"
     :maxPeople="maxPeople"
     :battery="battery"
     @update:maxPeople="updateMaxPeople"
@@ -27,7 +33,7 @@
         {{ peopleStatus }}
       </span>
 
-      <button v-if="!accessViaQr" class="admin-btn" @click="isAdmin = true">
+      <button v-if="!accessViaQr && !PUBLIC_MODE" class="admin-btn" @click="isAdmin = true">
         Admin
       </button>
     </header>
@@ -84,6 +90,7 @@ import Login from '@/components/Login.vue'
 import PeopleChart from '@/components/PeopleChart.vue'
 import Admin from '@/components/Admin.vue'
 import PassageHistory from '@/components/PassageHistory.vue'
+import QrOnly from '@/views/QrOnly.vue'
 
 /* ================== CONSTANTES ================== */
 const STORAGE_COUNTERS = 'supervision_counters_v1'
@@ -92,6 +99,7 @@ const STORAGE_HISTORY = 'passage_history_v1'
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://178.32.107.35:3000'
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || SOCKET_URL.replace(':3000', ':3001')
+const PUBLIC_MODE = import.meta.env.VITE_PUBLIC_MODE === 'true'
 
 /* ================== AUTH ================== */
 const isAuthenticated = ref(false)
@@ -295,6 +303,7 @@ onMounted(async () => {
       accessViaQr.value = false
       sessionStorage.removeItem(QR_ACCESS_KEY)
       sessionStorage.removeItem(QR_ACCESS_VERSION_KEY)
+      isAuthenticated.value = false
     }
   }
   isCheckingAccess.value = false

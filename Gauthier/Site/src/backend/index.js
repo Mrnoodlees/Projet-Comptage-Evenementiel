@@ -12,6 +12,7 @@ import dashboardRoutes from './routes/dashboard.js'
 import publicRoutes from './routes/public.js'
 import loginRoutes from './routes/login.js'
 import adminRoutes from './routes/admin.js'
+import qrAccessRoutes from './routes/qrAccess.js'
 
 dotenv.config()
 
@@ -55,6 +56,7 @@ app.use('/api/dashboard', dashboardRoutes)
 app.use('/api/public', publicRoutes)
 app.use('/api/login', loginRoutes)
 app.use('/api/admin', adminRoutes)
+app.use('/api/dashboard/qr-access', qrAccessRoutes)
 
 const toNumber = (value, fallback) => {
   const parsed = Number(value)
@@ -228,5 +230,5 @@ process.on('SIGTERM', () => shutdown('SIGTERM'))
 server.listen(port, () => {
   console.log('API démarrée sur le port', port)
   console.log('Relais socket sur', sourceSocketUrl)
-  startSshTunnel()
+  // Tunnel SSH géré par tunnels.sh
 })

@@ -225,6 +225,7 @@ const qrError = ref('')
 const isGenerating = ref(false)
 const qrExpiresAt = ref(null)
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || window.location.origin
+const PUBLIC_DASHBOARD_URL = 'http://178.32.107.35:5173'
 const isResettingAccess = ref(false)
 const resetMessage = ref('')
 // Aggregated stats per door.
@@ -299,7 +300,7 @@ const generateQr = async () => {
     }
 
     const { token, expiresAt } = await response.json()
-    adminUrl.value = `${window.location.origin}/dashboard?admin_token=${token}`
+    adminUrl.value = `${PUBLIC_DASHBOARD_URL}/dashboard?admin_token=${token}`
     qrExpiresAt.value = expiresAt
     qrDataUrl.value = await QRCode.toDataURL(adminUrl.value, {
       width: 240,
