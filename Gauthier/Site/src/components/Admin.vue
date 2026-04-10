@@ -152,6 +152,7 @@
         <div v-else class="devices-table">
           <div class="devices-head">
             <span>Id</span>
+            <span>Lien</span>
             <span>Sensibilité</span>
             <span>Role F</span>
             <span>Role B</span>
@@ -162,6 +163,17 @@
 
           <div v-for="device in devices" :key="device.id" class="devices-row">
             <span class="device-id">{{ device.id }}</span>
+            <span class="device-link">
+              <a
+                v-if="deviceLink(device.id)"
+                :href="deviceLink(device.id)"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {{ deviceLink(device.id) }}
+              </a>
+              <span v-else>—</span>
+            </span>
             <input v-model.number="device.sensibilite" type="number" />
             <select v-model="device.role_f">
               <option value="">—</option>
@@ -195,6 +207,8 @@
 import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import QRCode from 'qrcode'
 import InfluenceView from '@/components/InfluenceView.vue'
+
+const DEVICE_HOST_SUFFIX = import.meta.env.VITE_DEVICE_HOST_SUFFIX || '.local'
 
 /* ================== EMITS ================== */
 const emit = defineEmits([
@@ -399,6 +413,13 @@ const formatDate = (value) => {
   if (!value) return '-'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString()
+}
+
+const deviceLink = (id) => {
+  const safeId = String(id || '').trim()
+  if (!safeId) return ''
+  const host = safeId.includes('.') ? safeId : `${safeId}${DEVICE_HOST_SUFFIX}`
+  return `http://${host}/`
 }
 
 const loadDevices = async () => {
@@ -658,7 +679,7 @@ onBeforeUnmount(() => {
 .devices-head,
 .devices-row {
   display: grid;
-  grid-template-columns: 1.4fr repeat(4, 1fr) 1.2fr 0.9fr;
+  grid-template-columns: 1.2fr 1.8fr repeat(4, 1fr) 1.2fr 0.9fr;
   gap: 8px;
   align-items: center;
 }
@@ -699,6 +720,17 @@ onBeforeUnmount(() => {
 .device-id {
   font-weight: 600;
   color: #e2e8f0;
+}
+
+.device-link a {
+  color: #93c5fd;
+  text-decoration: none;
+  font-size: 0.82rem;
+  word-break: break-all;
+}
+
+.device-link a:hover {
+  text-decoration: underline;
 }
 
 .device-date {
