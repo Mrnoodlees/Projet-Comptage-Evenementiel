@@ -4,6 +4,7 @@ import pkg from 'pg'
 dotenv.config()
 const { Pool } = pkg
 
+// Convertit les variables .env numériques avec une valeur par défaut robuste.
 const toNumber = (value, fallback) => {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : fallback
@@ -12,6 +13,7 @@ const toNumber = (value, fallback) => {
 const getEnv = (key, fallback) => process.env[key] || fallback
 
 // Switch DB host/port to local tunnel when enabled.
+// Si SSH_TUNNEL_ENABLED=true, l’API se connecte à localhost:port_tunnel.
 const sshTunnelEnabled = process.env.SSH_TUNNEL_ENABLED === 'true'
 const tunnelLocalHost = process.env.SSH_TUNNEL_LOCAL_HOST || '127.0.0.1'
 const tunnelLocalPort = toNumber(process.env.SSH_TUNNEL_LOCAL_PORT, 5432)
@@ -20,6 +22,7 @@ const dbConnectTimeoutMs = toNumber(process.env.DB_CONNECT_TIMEOUT_MS, 5000)
 const dbQueryTimeoutMs = toNumber(process.env.DB_QUERY_TIMEOUT_MS, 10000)
 
 const dbConfig = {
+  // Ces valeurs sont utilisées en connexion directe quand aucun tunnel n’est actif.
   host: getEnv('DB_HOST', '178.32.107.35'),
   user: getEnv('DB_USER', 'postgres'),
   password: getEnv('DB_PASSWORD', 'dot'),
@@ -30,6 +33,7 @@ const dbConfig = {
 }
 
 if (sshTunnelEnabled) {
+  // En mode tunnel, DB_HOST/DB_PORT sont remplacés par le port local SSH.
   dbConfig.host = tunnelLocalHost
   dbConfig.port = tunnelLocalPort
 }
@@ -40,10 +44,12 @@ const shouldLogQueries = process.env.LOG_SQL === 'true'
 const shouldLogDbConfig = process.env.LOG_DB_CONFIG === 'true'
 
 pool.on('error', (err) => {
+  // Erreur globale de connexion PostgreSQL, utile pour diagnostiquer une coupure BDD.
   console.error('BDD erreur inattendue', err.message)
 })
 
 pool.on('connect', (client) => {
+  // Timeouts de sécurité : évite qu’une requête SQL bloquée fige l’API.
   const statementTimeoutMs = toNumber(process.env.DB_STATEMENT_TIMEOUT_MS, 10000)
   const lockTimeoutMs = toNumber(process.env.DB_LOCK_TIMEOUT_MS, 5000)
   client
@@ -62,6 +68,7 @@ if (shouldLogDbConfig) {
 }
 
 if (shouldLogQueries) {
+  // Mode debug SQL facultatif : affiche durée et texte de chaque requête.
   const originalQuery = pool.query.bind(pool)
   pool.query = async (...args) => {
     const startedAt = Date.now()

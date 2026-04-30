@@ -25,10 +25,12 @@ import { ref } from 'vue'
 
 const emit = defineEmits(['apply'])
 
+// Champs du filtre temporel envoyés au composant parent.
 const from = ref('')
 const to = ref('')
 
 const apply = () => {
+  // Ne lance pas de requête tant que les deux bornes ne sont pas renseignées.
   if (!from.value || !to.value) return
   emit('apply', {
     from: new Date(from.value),

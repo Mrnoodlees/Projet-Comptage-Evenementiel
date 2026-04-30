@@ -22,6 +22,7 @@
 import { ref, onMounted } from 'vue'
 
 /* ================== CONSTANTES ================== */
+// On conserve seulement les 100 derniers passages côté navigateur.
 const MAX_HISTORY = 100
 const HISTORY_KEY = 'passage_history_v1'
 
@@ -30,6 +31,7 @@ const history = ref([])
 
 /* ================== LIFECYCLE ================== */
 onMounted(() => {
+  // Recharge l’historique sauvegardé localement pour éviter une page vide au refresh.
   const saved = localStorage.getItem(HISTORY_KEY)
   if (saved) {
     history.value = JSON.parse(saved)
@@ -38,10 +40,12 @@ onMounted(() => {
 
 /* ================== METHODS ================== */
 const persist = () => {
+  // Sauvegarde locale : pratique en démonstration, même sans rechargement complet API.
   localStorage.setItem(HISTORY_KEY, JSON.stringify(history.value))
 }
 
 const addEntry = (data) => {
+  // Ajoute le passage le plus récent en haut de liste.
   history.value.unshift({
     time: new Date(data.date_heure).toLocaleTimeString(),
     door: data.appareil_id,
@@ -56,6 +60,7 @@ const addEntry = (data) => {
 }
 
 const resetHistory = () => {
+  // Nettoie l’affichage et le stockage local.
   history.value = []
   localStorage.removeItem(HISTORY_KEY)
 }

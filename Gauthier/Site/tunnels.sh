@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Gestion centralisée des tunnels SSH du projet :
+# - tunnel local vers la BDD
+# - tunnel inversé vers la VPS
+# Le script supporte ssh, autossh, clés SSH et sshpass.
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="$SCRIPT_DIR/.env"
 
 get_env() {
+  # Lit une variable dans .env sans charger tout le fichier comme script Bash.
   local key="$1"
   local fallback="${2:-}"
   local value=""
@@ -37,6 +42,7 @@ ensure_sudo() {
 }
 
 free_port() {
+  # Évite les conflits quand un ancien tunnel écoute encore sur le même port.
   local port="$1"
   local pids=""
 
@@ -82,6 +88,7 @@ fi
 ALLOW_PROMPT="$(get_env "TUNNEL_ALLOW_PASSWORD_PROMPT" "false")"
 
 build_ssh_opts() {
+  # Options communes pour rendre les tunnels plus fiables et détecter les échecs.
   local identity="$1"
   local allow_prompt="$2"
   local -a opts
@@ -104,6 +111,7 @@ build_ssh_opts() {
 }
 
 start_tunnel() {
+  # Démarre un tunnel et renvoie son PID pour pouvoir l’arrêter ensuite.
   local name="$1"
   local password="$2"
   shift 2
@@ -127,6 +135,7 @@ start_tunnel() {
 PIDS=()
 
 cleanup() {
+  # Ferme tous les tunnels ouverts par ce script.
   for pid in "${PIDS[@]:-}"; do
     if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
       kill "$pid" 2>/dev/null || true
@@ -139,6 +148,7 @@ trap cleanup EXIT
 
 SSH_TUNNEL_ENABLED="$(get_env "SSH_TUNNEL_ENABLED" "false")"
 if [[ "$SSH_TUNNEL_ENABLED" == "true" ]]; then
+  # Tunnel local : l’API croit parler à une BDD locale, SSH transmet à la BDD distante.
   SSH_TUNNEL_HOST="$(get_env "SSH_TUNNEL_HOST" "")"
   SSH_TUNNEL_LOCAL_PORT="$(get_env "SSH_TUNNEL_LOCAL_PORT" "25432")"
   SSH_TUNNEL_REMOTE_HOST="$(get_env "SSH_TUNNEL_REMOTE_HOST" "127.0.0.1")"
@@ -167,6 +177,7 @@ fi
 
 REVERSE_SSH_ENABLED="$(get_env "REVERSE_SSH_ENABLED" "false")"
 if [[ "$REVERSE_SSH_ENABLED" == "true" ]]; then
+  # Tunnel inversé : un port de la VPS renvoie vers un service de cette machine.
   REVERSE_SSH_HOST="$(get_env "REVERSE_SSH_HOST" "")"
   REVERSE_SSH_REMOTE_PORT="$(get_env "REVERSE_SSH_REMOTE_PORT" "15432")"
   REVERSE_SSH_LOCAL_HOST="$(get_env "REVERSE_SSH_LOCAL_HOST" "127.0.0.1")"

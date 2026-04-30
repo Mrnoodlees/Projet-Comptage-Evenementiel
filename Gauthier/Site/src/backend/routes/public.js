@@ -8,6 +8,7 @@ const tableCache = {
 }
 
 const getColumns = async (schemaName, tableName) => {
+  // Même logique adaptative que les routes dashboard/passages.
   const { rows } = await pool.query(
     `
       SELECT column_name
@@ -20,6 +21,7 @@ const getColumns = async (schemaName, tableName) => {
 }
 
 const findTable = async (tableName) => {
+  // Permet de trouver les tables dans public ou dans DB_SCHEMA.
   const preferredSchema = process.env.DB_SCHEMA || 'public'
   const { rows } = await pool.query(
     `
@@ -37,6 +39,7 @@ const findTable = async (tableName) => {
 }
 
 const resolveInfluenceSource = async () => {
+  // Choisit la meilleure table disponible pour calculer l’affluence publique.
   if (tableCache.source) return tableCache.source
 
   const logPassages = await findTable('log_passages')
@@ -107,10 +110,12 @@ const resolveInfluenceSource = async () => {
 }
 
 const buildWhere = (extraWhere, clause) => {
+  // Combine le filtre de phase FIN avec la plage temporelle demandée.
   return extraWhere ? `WHERE ${extraWhere} AND ${clause}` : `WHERE ${clause}`
 }
 
 router.get('/influence', async (req, res) => {
+  // Route utilisée par l’analyse admin et/ou la page publique QR.
   const { from, to } = req.query
   const includeBase = req.query.include_base === '1'
   const requestId = req.requestId || 'no-id'
@@ -149,6 +154,7 @@ router.get('/influence', async (req, res) => {
     }
 
     const baseWhere = buildWhere(source.extraWhere, `${source.dateColumn} < $1`)
+    // Base = personnes déjà présentes avant le début de la période demandée.
     const baseResult = await pool.query(
       `
         SELECT

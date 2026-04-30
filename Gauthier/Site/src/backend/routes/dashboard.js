@@ -10,6 +10,7 @@ const TYPE_ENTREE = 'ENTREE'
 const TYPE_SORTIE = 'SORTIE'
 const TYPE_FIN = 'FIN'
 
+// Cache de découverte BDD : évite de redemander les tables/colonnes à chaque requête.
 const tableCache = {
   passageSource: null,
   hasAppareils: false
@@ -18,6 +19,7 @@ const tableCache = {
 let settingsEnsured = false
 
 const ensureSettingsTable = async () => {
+  // Table simple pour conserver la capacité maximale configurée par l’admin.
   if (settingsEnsured) return
   await pool.query(`
     CREATE TABLE IF NOT EXISTS dashboard_settings (
@@ -30,6 +32,7 @@ const ensureSettingsTable = async () => {
 }
 
 const getMaxPeople = async () => {
+  // Retourne la capacité enregistrée ou une valeur par défaut.
   await ensureSettingsTable()
   const { rows } = await pool.query(`
     SELECT max_people
@@ -43,6 +46,7 @@ const getMaxPeople = async () => {
 }
 
 const setMaxPeople = async (value) => {
+  // Upsert sur id=1 : il n’existe qu’un réglage global de capacité.
   await ensureSettingsTable()
   await pool.query(`
     INSERT INTO dashboard_settings (id, max_people, updated_at)
@@ -53,6 +57,7 @@ const setMaxPeople = async (value) => {
 }
 
 const resolveDoorColumn = (columnSet) => {
+  // Les différentes versions de BDD peuvent nommer la porte différemment.
   if (columnSet.has('appareil_id')) return 'appareil_id'
   if (columnSet.has('capteur_id')) return 'capteur_id'
   if (columnSet.has('capteur')) return 'capteur'
@@ -61,6 +66,7 @@ const resolveDoorColumn = (columnSet) => {
 }
 
 const resolvePassageSource = async () => {
+  // Détecte automatiquement quelle table contient les passages.
   if (tableCache.passageSource) return tableCache.passageSource
 
   const { rows } = await pool.query(`
@@ -75,6 +81,7 @@ const resolvePassageSource = async () => {
   tableCache.hasAppareils = Boolean(row.appareils)
 
   if (row.passage) {
+    // Ancien schéma possible : table singulière passage.
     const columns = await pool.query(`
       SELECT column_name
       FROM information_schema.columns
@@ -98,6 +105,7 @@ const resolvePassageSource = async () => {
   }
 
   if (row.passages) {
+    // Autre schéma possible : table plurielle passages.
     const columns = await pool.query(`
       SELECT column_name
       FROM information_schema.columns
@@ -121,6 +129,7 @@ const resolvePassageSource = async () => {
   }
 
   if (row.log_passages) {
+    // Schéma capteur détaillé : plusieurs phases, on garde uniquement FIN.
     const columns = await pool.query(`
       SELECT column_name
       FROM information_schema.columns
@@ -142,11 +151,13 @@ const resolvePassageSource = async () => {
 }
 
 const buildWhereClause = (extraWhere, clause) => {
+  // Combine les filtres techniques avec la condition métier de la requête.
   if (!extraWhere) return `WHERE ${clause}`
   return `WHERE ${extraWhere} AND ${clause}`
 }
 
 const countByType = async (source, type) => {
+  // Compte les entrées ou sorties dans la table détectée.
   const whereClause = buildWhereClause(source.extraWhere, `${source.typeColumn} = '${type}'`)
   const { rows } = await pool.query(`SELECT COUNT(*) FROM ${source.table} ${whereClause}`)
   return Number(rows[0]?.count || 0)
@@ -154,6 +165,7 @@ const countByType = async (source, type) => {
 
 // Aggregate PMR counts based on doors marked in door_settings.
 const getPmrSummary = async (source) => {
+  // Agrège seulement les portes marquées PMR dans door_settings.
   if (!source.doorColumn) {
     return { entries: 0, exits: 0, people: 0 }
   }
@@ -185,6 +197,7 @@ const getPmrSummary = async (source) => {
 }
 
 const getAverageBattery = async () => {
+  // Batterie globale du dashboard = moyenne des batteries des appareils.
   if (!tableCache.hasAppareils) return DEFAULT_BATTERY
 
   const { rows } = await pool.query(`
@@ -198,6 +211,7 @@ const getAverageBattery = async () => {
 
 /* ================= ETAT DASHBOARD ================= */
 router.get('/state', async (req, res) => {
+  // Route principale du dashboard : renvoie tout l’état courant en une réponse.
   const requestId = req.requestId || 'no-id'
   try {
     const source = await resolvePassageSource()
@@ -233,6 +247,7 @@ router.get('/state', async (req, res) => {
 
 /* ================= MAX PEOPLE ================= */
 router.get('/max-people', async (req, res) => {
+  // Lecture séparée de la capacité maximale.
   const requestId = req.requestId || 'no-id'
   try {
     const maxPeople = await getMaxPeople()
@@ -244,6 +259,7 @@ router.get('/max-people', async (req, res) => {
 })
 
 router.post('/max-people', async (req, res) => {
+  // Sauvegarde d’une nouvelle capacité depuis le panneau admin.
   const requestId = req.requestId || 'no-id'
   const value = Number(req.body?.maxPeople)
 
@@ -262,6 +278,7 @@ router.post('/max-people', async (req, res) => {
 
 /* ================= COURBE PEOPLE ================= */
 router.get('/people-chart', async (req, res) => {
+  // Renvoie l’évolution cumulée des personnes présentes pour Chart.js.
   const requestId = req.requestId || 'no-id'
   try {
     const source = await resolvePassageSource()
@@ -290,6 +307,7 @@ router.get('/people-chart', async (req, res) => {
 
 /* ================= PORTES ================= */
 router.get('/door-stats', async (req, res) => {
+  // Statistiques par porte : entrées, sorties, présents, batterie, flag PMR.
   const requestId = req.requestId || 'no-id'
   try {
     const source = await resolvePassageSource()
@@ -357,6 +375,7 @@ router.get('/door-stats', async (req, res) => {
 
 /* ================= PMR SUMMARY ================= */
 router.get('/pmr', async (req, res) => {
+  // Résumé PMR isolé si un écran veut seulement cette information.
   const requestId = req.requestId || 'no-id'
   try {
     const source = await resolvePassageSource()
@@ -376,6 +395,7 @@ router.get('/pmr', async (req, res) => {
 
 /* ================= INFLUENCE ================= */
 router.get('/influence', async (req, res) => {
+  // Ancienne route d’influence : compte les entrées groupées par heure.
   const requestId = req.requestId || 'no-id'
   try {
     const source = await resolvePassageSource()

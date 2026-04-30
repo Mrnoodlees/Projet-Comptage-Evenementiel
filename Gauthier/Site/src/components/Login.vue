@@ -34,16 +34,19 @@ const username = ref('')
 const password = ref('')
 // UI error message.
 const error = ref('')
+// L’API peut être locale en développement ou distante derrière la VPS.
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || ''
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ||
   (SOCKET_URL ? SOCKET_URL.replace(':3000', ':3001') : window.location.origin)
+// Fallback uniquement utile en démo locale si l’API n’est pas disponible.
 const ALLOW_LOCAL_LOGIN = import.meta.env.VITE_ALLOW_LOCAL_LOGIN === 'true'
 // Optional local fallback for offline testing.
 const isLocalAdmin = (user, pass) => user === 'admin' && pass === 'admin'
 
 // Authenticate against the API (with optional local fallback).
 const login = async () => {
+  // Le vrai login passe par PostgreSQL via /api/login.
   error.value = ''
 
   try {

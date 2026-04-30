@@ -4,6 +4,7 @@ let ensured = false
 
 // Stores door-level flags such as PMR.
 export const ensureDoorSettingsTable = async () => {
+  // Table complémentaire au modèle capteur : elle stocke les choix faits dans l’admin.
   if (ensured) return
   await pool.query(`
     CREATE TABLE IF NOT EXISTS door_settings (
@@ -16,6 +17,7 @@ export const ensureDoorSettingsTable = async () => {
 }
 
 export const upsertDoorSetting = async (doorId, isPmr) => {
+  // Upsert : crée la porte si elle n’existe pas, sinon met à jour son flag PMR.
   await ensureDoorSettingsTable()
   await pool.query(`
     INSERT INTO door_settings (door_id, is_pmr, updated_at)

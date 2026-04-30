@@ -33,6 +33,7 @@ const chartTitle = ref('')
 const lastDataset = ref({ labels: [], data: [] })
 // Cached date range for export filenames.
 const lastRange = ref(null)
+// Même principe que le dashboard : l’API peut être locale ou proxifiée par la VPS.
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || window.location.origin
 
 const canExport = computed(() => (lastDataset.value.labels || []).length > 0)
@@ -42,6 +43,7 @@ const toHourLabel = (value) =>
 
 // Convert API rows into hourly cumulative counts.
 const buildHourlySeries = (rows, from, to, base = 0) => {
+  // L’API renvoie des entrées/sorties par heure ; ici on calcule les présents.
   const map = new Map(rows.map(row => [new Date(row.heure).getTime(), row]))
   const labels = []
   const data = []
@@ -69,6 +71,7 @@ const buildHourlySeries = (rows, from, to, base = 0) => {
 
 // Fetch influence data and render the chart.
 const generate = async ({ from, to }) => {
+  // Appelle la route publique d’influence avec une plage choisie par l’admin.
   const url = new URL(`${API_BASE_URL}/api/public/influence`)
   url.searchParams.set('from', from.toISOString())
   url.searchParams.set('to', to.toISOString())
@@ -94,6 +97,7 @@ const generate = async ({ from, to }) => {
 }
 
 const formatStamp = (date) => {
+  // Format stable pour nommer les fichiers exportés.
   const pad = (value) => String(value).padStart(2, '0')
   return [
     date.getFullYear(),
@@ -111,6 +115,7 @@ const buildFileName = (extension) => {
 
 // Export chart image with axes and white background.
 const exportPng = () => {
+  // Télécharge une image du graphique courant.
   const dataUrl = chartRef.value?.toImageDataUrl?.()
   if (!dataUrl) return
   const link = document.createElement('a')
@@ -123,6 +128,7 @@ const exportPng = () => {
 
 // Export data as CSV.
 const exportCsv = () => {
+  // Télécharge les points du graphique pour analyse dans tableur.
   const { labels = [], data = [] } = lastDataset.value || {}
   if (!labels.length) return
 

@@ -4,6 +4,7 @@ import { pool } from '../db.js'
 const router = express.Router()
 
 const getColumns = async (schemaName, tableName) => {
+  // Lit dynamiquement les colonnes pour s’adapter à plusieurs schémas BDD possibles.
   const { rows } = await pool.query(
     `
       SELECT column_name
@@ -16,6 +17,7 @@ const getColumns = async (schemaName, tableName) => {
 }
 
 const findTable = async (tableName) => {
+  // Cherche la table dans le schéma demandé, sinon dans un autre schéma disponible.
   const preferredSchema = process.env.DB_SCHEMA || 'public'
   const { rows } = await pool.query(
     `
@@ -33,6 +35,7 @@ const findTable = async (tableName) => {
 }
 
 const resolvePassageSource = async () => {
+  // Le projet accepte plusieurs noms de tables selon l’évolution de la BDD.
   const logPassages = await findTable('log_passages')
   const passages = await findTable('passages')
   const passage = await findTable('passage')
@@ -107,6 +110,7 @@ const resolvePassageSource = async () => {
 }
 
 const buildWhere = (extraWhere) => {
+  // Ajoute le filtre type_passage='FIN' quand la table contient plusieurs phases.
   return extraWhere ? `WHERE ${extraWhere}` : ''
 }
 
@@ -114,6 +118,7 @@ const buildWhere = (extraWhere) => {
  * Enregistrement d’un passage (depuis capteur / MQTT)
  */
 router.post('/', async (req, res) => {
+  // Point d’entrée prévu pour recevoir un passage depuis capteur ou intégration externe.
   const {
     capteur_id,
     capteur,
@@ -141,6 +146,7 @@ router.post('/', async (req, res) => {
  * Historique brut (admin)
  */
 router.get('/', async (req, res) => {
+  // Retourne l’historique brut affiché dans PassageHistory.vue.
   const limit = Math.min(Number(req.query.limit) || 500, 1000)
   const requestId = req.requestId || 'no-id'
 

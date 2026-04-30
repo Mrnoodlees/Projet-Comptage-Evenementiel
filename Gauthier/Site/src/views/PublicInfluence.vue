@@ -32,6 +32,8 @@ const status = ref('loading')
 // Access granted only via QR token.
 const isAllowed = ref(false)
 
+// URL de l’API à appeler depuis la page publique.
+// En production VPS, elle peut pointer vers Apache qui proxifie ensuite vers l’API.
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || window.location.origin
 let refreshTimer = null
@@ -40,6 +42,7 @@ const router = useRouter()
 const PUBLIC_ACCESS_KEY = 'public_access_v1'
 
 const verifyPublicToken = async (token) => {
+  // Valide le token public avant d’afficher l’analyse d’affluence.
   try {
     const response = await fetch(`${API_BASE_URL}/api/admin/public-verify?token=${encodeURIComponent(token)}`)
     if (!response.ok) return false
@@ -55,6 +58,8 @@ const toHourLabel = (value) =>
 
 // Build hourly cumulative series from API rows.
 const buildHourlySeries = (rows, from, to, base = 0) => {
+  // Reconstitue une valeur cumulative par heure :
+  // présents = base + entrées - sorties.
   const map = new Map(rows.map(row => [new Date(row.heure).getTime(), row]))
   const labels = []
   const data = []
@@ -81,6 +86,7 @@ const buildHourlySeries = (rows, from, to, base = 0) => {
 }
 
 const buildChart = (rows, from, to, base) => {
+  // Transforme la réponse API en données utilisables par Chart.js.
   if (!rows.length) {
     status.value = 'empty'
     return
@@ -94,6 +100,7 @@ const buildChart = (rows, from, to, base) => {
 
 // Fetch and render public influence data.
 const loadInfluence = async () => {
+  // La page publique affiche par défaut les 24 dernières heures.
   if (!isAllowed.value) return
   status.value = 'loading'
 
@@ -123,6 +130,7 @@ const loadInfluence = async () => {
 }
 
 onMounted(() => {
+  // Si le QR a déjà été validé dans l’onglet, on évite de redemander le token.
   const alreadyAllowed = sessionStorage.getItem(PUBLIC_ACCESS_KEY) === '1'
   if (alreadyAllowed) {
     isAllowed.value = true
@@ -133,11 +141,13 @@ onMounted(() => {
 
   const token = route.query.public_token
   if (typeof token !== 'string') {
+    // Sans token, on renvoie vers le dashboard classique.
     router.replace('/dashboard')
     return
   }
 
   verifyPublicToken(token).then(ok => {
+    // Après validation, la courbe se rafraîchit automatiquement.
     if (!ok) {
       router.replace('/dashboard')
       return

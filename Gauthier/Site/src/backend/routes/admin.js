@@ -7,9 +7,11 @@ import { bumpAccessVersion, getAccessVersion } from '../qrAccessVersion.js'
 
 const router = express.Router()
 
+// Permet de choisir si le reset QR révoque aussi les tokens stockés en BDD.
 const shouldRevokeQrTokens = () => process.env.QR_RESET_REVOKE !== 'false'
 
 router.post('/qr', async (_req, res) => {
+  // Génère un token QR persistant pour ouvrir le dashboard via lien scanné.
   try {
     const token = await createQrToken('admin')
     return res.json({ token, expiresAt: null })
@@ -19,6 +21,7 @@ router.post('/qr', async (_req, res) => {
 })
 
 router.get('/qr-tokens', async (_req, res) => {
+  // Route de diagnostic : donne le nombre de tokens admin encore actifs.
   try {
     const tokens = await listQrTokens('admin')
     return res.json({ count: tokens.length })
@@ -28,10 +31,12 @@ router.get('/qr-tokens', async (_req, res) => {
 })
 
 router.get('/version', (_req, res) => {
+  // Version utilisée par les navigateurs pour savoir si leur session QR est périmée.
   return res.json({ version: getAccessVersion() })
 })
 
 router.post('/reset', async (_req, res) => {
+  // Invalide les sessions QR existantes et, selon la config, révoque les tokens BDD.
   bumpAccessVersion()
   try {
     if (shouldRevokeQrTokens()) {
@@ -44,6 +49,7 @@ router.post('/reset', async (_req, res) => {
 })
 
 router.get('/verify', async (req, res) => {
+  // Vérifie un token reçu depuis l’URL /dashboard?admin_token=...
   const token = req.query.token
 
   if (!token || typeof token !== 'string') {
@@ -62,6 +68,7 @@ router.get('/verify', async (req, res) => {
 })
 
 router.post('/door-pmr', async (req, res) => {
+  // Marque une porte comme PMR ou non. Le dashboard peut ensuite agréger ces passages.
   const { doorId, isPmr } = req.body || {}
 
   if (!doorId || typeof doorId !== 'string') {
@@ -77,6 +84,7 @@ router.post('/door-pmr', async (req, res) => {
 })
 
 router.post('/users', async (req, res) => {
+  // Création d’un compte de connexion depuis le panneau admin.
   const { username, password } = req.body || {}
 
   if (!username || !password) {
@@ -109,6 +117,7 @@ router.post('/users', async (req, res) => {
 })
 
 router.get('/appareils', async (_req, res) => {
+  // Liste les capteurs/appareils connus pour affichage et configuration.
   try {
     const { rows } = await pool.query(`
       SELECT
@@ -131,6 +140,7 @@ router.get('/appareils', async (_req, res) => {
 })
 
 router.patch('/appareils/:id', async (req, res) => {
+  // Met à jour uniquement les champs autorisés pour éviter une modification libre SQL.
   const { id } = req.params
   const allowed = ['sensibilite', 'role_f', 'role_b', 'temps_bloque']
   const updates = []
@@ -162,6 +172,7 @@ router.patch('/appareils/:id', async (req, res) => {
 })
 
 router.delete('/appareils/:id', async (req, res) => {
+  // Supprime un capteur/appareil de la table appareils.
   const { id } = req.params
 
   if (!id) {

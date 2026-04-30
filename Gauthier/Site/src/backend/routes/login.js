@@ -5,6 +5,7 @@ import { hashPassword, verifyPassword, isHashedPassword } from '../auth.js'
 const router = express.Router()
 
 router.post('/', async (req, res) => {
+  // Route appelée par Login.vue pour ouvrir le dashboard privé.
   const { username, password } = req.body
   const requestId = req.requestId || 'no-id'
 
@@ -33,6 +34,7 @@ router.post('/', async (req, res) => {
     }
 
     const user = rows[0]
+    // verifyPassword accepte les anciens mots de passe en clair et les nouveaux hashés.
     const ok = verifyPassword(password, user.mdp)
     if (!ok) {
       console.warn(`[${requestId}] Login refusé user="${normalizedUsername}"`)
@@ -40,6 +42,7 @@ router.post('/', async (req, res) => {
     }
 
     if (!isHashedPassword(user.mdp)) {
+      // Migration transparente : dès qu’un ancien compte se connecte, on hash son mdp.
       try {
         const upgraded = hashPassword(password)
         await pool.query('UPDATE login SET mdp = $1 WHERE id = $2', [upgraded, user.id])

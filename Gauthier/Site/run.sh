@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Script pratique de développement :
+# 1. lit les ports dans .env
+# 2. libère les ports déjà occupés
+# 3. démarre les tunnels SSH
+# 4. lance l’API et le front via run.js
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
@@ -8,6 +13,7 @@ AUTOSSH_PID=""
 TUNNELS_PID=""
 
 cleanup() {
+  # Nettoyage des tunnels si l’utilisateur fait Ctrl+C.
   if [[ -n "${AUTOSSH_PID:-}" ]] && kill -0 "$AUTOSSH_PID" 2>/dev/null; then
     kill "$AUTOSSH_PID" 2>/dev/null || true
   fi
@@ -20,6 +26,7 @@ trap cleanup EXIT
 trap 'cleanup; exit 0' INT TERM
 
 read_env_port() {
+  # Récupère PORT dans .env, avec 3001 comme valeur par défaut.
   local env_file="$SCRIPT_DIR/.env"
   local value=""
 
@@ -35,6 +42,7 @@ read_env_port() {
 }
 
 get_env_value() {
+  # Lecture générique d’une variable .env depuis Bash.
   local key="$1"
   local fallback="${2:-}"
   local env_file="$SCRIPT_DIR/.env"
@@ -133,6 +141,7 @@ force_kill_port_with_sudo() {
 }
 
 free_port() {
+  # Libère un port avant le lancement pour éviter EADDRINUSE.
   local port="$1"
   local pids=""
 
@@ -182,6 +191,7 @@ fi
 
 # Tunnels auto-setup (local DB + reverse VPS).
 if [[ -x "$SCRIPT_DIR/tunnels.sh" ]]; then
+  # Les tunnels restent en arrière-plan pendant que l’app tourne.
   "$SCRIPT_DIR/tunnels.sh" &
   TUNNELS_PID="$!"
 else

@@ -235,6 +235,7 @@ import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import QRCode from 'qrcode'
 import InfluenceView from '@/components/InfluenceView.vue'
 
+// Suffixe utilisé pour construire un lien local vers un appareil/capteur.
 const DEVICE_HOST_SUFFIX = import.meta.env.VITE_DEVICE_HOST_SUFFIX || '.local'
 
 /* ================== EMITS ================== */
@@ -247,6 +248,7 @@ const emit = defineEmits([
 ])
 
 /* ================== PROPS ================== */
+// L’admin reçoit la capacité et la batterie depuis Dashboard.vue.
 const props = defineProps({
   maxPeople: Number,
   battery: Number
@@ -265,10 +267,13 @@ const qrDataUrl = ref('')
 const qrError = ref('')
 const isGenerating = ref(false)
 const qrExpiresAt = ref(null)
+// API appelée par les actions d’administration.
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || window.location.origin
+// URL encodée dans le QR : elle doit pointer vers le dashboard public/VPS.
 const PUBLIC_DASHBOARD_URL = 'http://178.32.107.35:5173'
 const isResettingAccess = ref(false)
 const resetMessage = ref('')
+// Formulaire de création d’identifiants.
 const newUsername = ref('')
 const newPassword = ref('')
 const createUserLoading = ref(false)
@@ -295,21 +300,25 @@ watch(
 
 /* ================== ACTIONS ================== */
 const saveMaxPeople = () => {
+  // Envoie la nouvelle capacité au parent, qui la sauvegarde via l’API dashboard.
   emit('update:maxPeople', localMaxPeople.value)
 }
 
 const resetCounters = () => {
+  // Protection simple contre un reset involontaire pendant une démonstration.
   if (confirm('Confirmer la réinitialisation des compteurs et de l’historique ?')) {
     emit('resetCounters')
   }
 }
 
 const resetBattery = () => {
+  // Action locale exposée au parent si l’on veut simuler une batterie pleine.
   emit('resetBattery')
 }
 
 /* ================== GÉNÉRATION ================== */
 const generateEntries = () => {
+  // Génère de faux événements d’entrée pour tester le dashboard sans capteur.
   emit(
     'generatePassage',
     Array.from({ length: generatedCount.value }, () => ({
@@ -321,6 +330,7 @@ const generateEntries = () => {
 }
 
 const generateExits = () => {
+  // Génère de faux événements de sortie pour tester le dashboard sans capteur.
   emit(
     'generatePassage',
     Array.from({ length: generatedCount.value }, () => ({
@@ -333,6 +343,7 @@ const generateExits = () => {
 
 /* ================== QR CODE ================== */
 const generateQr = async () => {
+  // Demande à l’API un token persistant, puis génère une image QR côté navigateur.
   qrError.value = ''
   isGenerating.value = true
 
@@ -360,6 +371,7 @@ const generateQr = async () => {
 }
 
 const resetQrAccess = async () => {
+  // Invalide les sessions QR déjà ouvertes en augmentant la version d’accès.
   resetMessage.value = ''
   isResettingAccess.value = true
 
@@ -382,6 +394,7 @@ const resetQrAccess = async () => {
 }
 
 const createUser = async () => {
+  // Crée un compte dans la table login. Le backend hash le mot de passe.
   createUserError.value = ''
   createUserMessage.value = ''
 
@@ -423,6 +436,7 @@ const createUser = async () => {
 /* ================== PORTES ================== */
 // Fetch door stats and PMR summary from the API.
 const loadDoorStats = async () => {
+  // Récupère les compteurs par porte et le total PMR depuis la BDD.
   const isFirstLoad = !hasLoadedDoors.value
   if (isFirstLoad) {
     isLoadingDoors.value = true
@@ -453,6 +467,7 @@ const loadDoorStats = async () => {
 
 // Persist PMR flag for a given door.
 const togglePmr = async (door) => {
+  // Optimistic UI : on coche/décoche tout de suite, puis on annule si l’API refuse.
   const nextValue = !door.is_pmr
   door.is_pmr = nextValue
 
@@ -474,6 +489,7 @@ const togglePmr = async (door) => {
 }
 
 const formatBattery = (value) => {
+  // Normalise l’affichage batterie même si la valeur BDD est absente.
   const numeric = Number(value)
   if (!Number.isFinite(numeric)) return '--'
   return `${numeric}%`
@@ -481,12 +497,14 @@ const formatBattery = (value) => {
 
 // Device table helpers.
 const formatDate = (value) => {
+  // Rend les dates de dernière connexion plus lisibles pour l’admin.
   if (!value) return '-'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString()
 }
 
 const deviceLink = (id) => {
+  // Transforme un identifiant appareil en lien web local, par exemple capteur-1.local.
   const safeId = String(id || '').trim()
   if (!safeId) return ''
   const host = safeId.includes('.') ? safeId : `${safeId}${DEVICE_HOST_SUFFIX}`
@@ -494,6 +512,7 @@ const deviceLink = (id) => {
 }
 
 const loadDevices = async () => {
+  // Charge la table appareils pour pouvoir modifier les paramètres capteurs.
   deviceLoading.value = true
   deviceError.value = ''
 
@@ -512,6 +531,7 @@ const loadDevices = async () => {
 }
 
 const saveDevice = async (device) => {
+  // Sauvegarde uniquement les champs modifiables depuis l’interface.
   device._saving = true
   try {
     const response = await fetch(
@@ -538,6 +558,7 @@ const saveDevice = async (device) => {
 }
 
 const deleteDevice = async (device) => {
+  // Suppression contrôlée : confirmation obligatoire avant appel API.
   if (!confirm(`Supprimer l’appareil ${device.id} ?`)) return
 
   device._saving = true
@@ -560,6 +581,7 @@ const deleteDevice = async (device) => {
 
 /* ================== NAV ================== */
 const handleBack = () => {
+  // Retour contextuel : d’abord vers le menu admin, puis vers le dashboard.
   if (mode.value === 'influence' || mode.value === 'devices') {
     mode.value = 'main'
   } else {
@@ -568,17 +590,20 @@ const handleBack = () => {
 }
 
 onMounted(() => {
+  // Les stats portes sont utiles dès l’ouverture de l’admin et restent rafraîchies.
   loadDoorStats()
   doorTimer = setInterval(loadDoorStats, 5 * 1000)
 })
 
 watch(mode, (value) => {
+  // Les appareils ne sont chargés que quand l’admin ouvre l’onglet concerné.
   if (value === 'devices') {
     loadDevices()
   }
 })
 
 onBeforeUnmount(() => {
+  // Nettoie le timer pour éviter les appels API après fermeture du composant.
   if (doorTimer) {
     clearInterval(doorTimer)
     doorTimer = null

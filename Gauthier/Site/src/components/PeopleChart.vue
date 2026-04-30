@@ -11,11 +11,13 @@ import Chart from 'chart.js/auto'
 const canvas = ref(null)
 let chart = null
 let index = 0
+// Limite le nombre de points visibles pour garder la courbe lisible.
 const MAX_DISPLAYED_POINTS = 25
 let yMax = 50
 const dataValues = ref([]) // Pour persistance
 
 const addValue = (value, maxLimit) => {
+  // Ajoute un nouveau point temps réel dans la courbe du dashboard.
   if (!chart) return
 
   chart.data.labels.push(index)
@@ -36,6 +38,7 @@ const addValue = (value, maxLimit) => {
 }
 
 const reset = () => {
+  // Vide la courbe, utilisé au reset ou au rechargement depuis l’API.
   if (!chart) return
   chart.data.labels = []
   chart.data.datasets[0].data = []
@@ -50,6 +53,7 @@ const getValues = () => dataValues.value
 defineExpose({ addValue, reset, getValues })
 
 onMounted(() => {
+  // Initialisation Chart.js au montage du composant.
   chart = new Chart(canvas.value, {
     type: 'line',
     data: {

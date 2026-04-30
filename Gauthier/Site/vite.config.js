@@ -4,7 +4,10 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vueDevTools from 'vite-plugin-vue-devtools'
 
-// https://vite.dev/config/
+// Configuration Vite :
+// - compile les fichiers Vue
+// - active les devtools Vue en développement
+// - définit l’alias @ vers src/ pour simplifier les imports
 export default defineConfig({
   plugins: [
     vue(),

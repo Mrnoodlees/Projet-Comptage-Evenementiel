@@ -13,6 +13,7 @@ let chart = null
 let lastLabels = []
 let lastData = []
 
+// Plugin Chart.js maison : il ajoute un fond blanc uniquement au moment de l’export PNG.
 const whiteBackgroundPlugin = {
   id: 'whiteBackground',
   beforeDraw: (chart, _args, options) => {
@@ -27,6 +28,7 @@ const whiteBackgroundPlugin = {
 }
 
 const render = (labels, data, options = {}) => {
+  // Rend une courbe complète à partir de labels horaires et de valeurs cumulées.
   lastLabels = labels
   lastData = data
 
@@ -79,6 +81,7 @@ const render = (labels, data, options = {}) => {
 }
 
 const toImageDataUrl = () => {
+  // Prépare temporairement le graphique pour un export lisible sur fond blanc.
   if (!chart) return null
 
   const original = {

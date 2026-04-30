@@ -18,6 +18,7 @@ dotenv.config()
 
 const app = express()
 
+// Liste blanche CORS : seuls les fronts déclarés dans .env peuvent appeler l’API.
 const corsOrigins = (process.env.CORS_ORIGIN || '')
   .split(',')
   .map(origin => origin.trim())
@@ -64,6 +65,8 @@ const toNumber = (value, fallback) => {
 }
 
 /* ================= SSH TUNNEL (OPTIONNEL) ================= */
+// Ancien mode intégré : l’API peut ouvrir elle-même un tunnel SSH vers la BDD.
+// Dans la configuration actuelle, tunnels.sh est préféré pour gérer les tunnels.
 const sshTunnelEnabled = process.env.SSH_TUNNEL_ENABLED === 'true'
 const sshTunnelHost = process.env.SSH_TUNNEL_HOST || 'comptage-db'
 const sshTunnelUseConfig = process.env.SSH_TUNNEL_USE_CONFIG !== 'false'
@@ -78,6 +81,7 @@ let sshReconnectTimer = null
 let shutdownRequested = false
 
 const startSshTunnel = () => {
+  // Crée un tunnel local : localhost:SSH_TUNNEL_LOCAL_PORT -> BDD distante.
   if (!sshTunnelEnabled) return
   if (sshTunnelProcess) return
 
@@ -93,6 +97,7 @@ const startSshTunnel = () => {
   console.log('Ouverture tunnel SSH...', sshTunnelHost)
 
   if (sshTunnelPassword) {
+    // sshpass sert uniquement quand aucun échange par clé SSH n’est configuré.
     sshTunnelProcess = spawn('sshpass', ['-p', sshTunnelPassword, 'ssh', ...args], {
       stdio: 'inherit'
     })
@@ -110,6 +115,7 @@ const startSshTunnel = () => {
   })
 
   sshTunnelProcess.on('exit', (code, signal) => {
+    // Si le tunnel tombe sans arrêt demandé, on tente de le rouvrir.
     sshTunnelProcess = null
     if (shutdownRequested) return
 
@@ -124,6 +130,7 @@ const startSshTunnel = () => {
 }
 
 const stopSshTunnel = () => {
+  // Arrêt propre du tunnel quand l’API reçoit SIGINT/SIGTERM.
   shutdownRequested = true
   if (sshReconnectTimer) clearTimeout(sshReconnectTimer)
   if (sshTunnelProcess && !sshTunnelProcess.killed) {
@@ -134,6 +141,7 @@ const stopSshTunnel = () => {
 const port = Number(process.env.PORT) || 3001
 const server = http.createServer(app)
 
+// Serveur Socket.IO exposé aux navigateurs.
 const io = new SocketIOServer(server, {
   cors: {
     origin: corsOrigins.length ? corsOrigins : true
@@ -141,6 +149,7 @@ const io = new SocketIOServer(server, {
 })
 
 // Cache last events so new clients get immediate state.
+// Sans ce cache, un client fraîchement connecté attendrait le prochain événement capteur.
 const relayCache = {
   init: null,
   status: null,
@@ -149,6 +158,7 @@ const relayCache = {
 }
 
 io.on('connection', (socket) => {
+  // Dès qu’un navigateur se connecte, on lui envoie le dernier état connu.
   console.log('Client frontend connecté', socket.id)
 
   if (relayCache.init) socket.emit('init', relayCache.init)
@@ -162,6 +172,7 @@ io.on('connection', (socket) => {
 })
 
 const sourceSocketUrl = process.env.SOURCE_SOCKET_URL || 'http://178.32.107.35:3000'
+// Client Socket.IO : l’API écoute une source externe puis relaie les événements au front.
 const sourceSocket = ioClient(sourceSocketUrl, {
   transports: ['websocket', 'polling'],
   reconnection: true,
@@ -182,6 +193,7 @@ sourceSocket.on('disconnect', (reason) => {
 })
 
 const forwardEvent = (eventName) => {
+  // Relais générique : init, passage, status et config suivent le même chemin.
   sourceSocket.on(eventName, (payload) => {
     relayCache[eventName] = payload
     if (eventName !== 'status') {
@@ -199,6 +211,7 @@ forwardEvent('config')
 let isShuttingDown = false
 
 const shutdown = (signal) => {
+  // Fermeture coordonnée : tunnel, socket source, socket front, serveur HTTP.
   if (isShuttingDown) return
   isShuttingDown = true
 
@@ -228,6 +241,7 @@ process.on('SIGINT', () => shutdown('SIGINT'))
 process.on('SIGTERM', () => shutdown('SIGTERM'))
 
 server.listen(port, () => {
+  // À partir d’ici l’API est prête à recevoir HTTP + WebSocket.
   console.log('API démarrée sur le port', port)
   console.log('Relais socket sur', sourceSocketUrl)
   // Tunnel SSH géré par tunnels.sh

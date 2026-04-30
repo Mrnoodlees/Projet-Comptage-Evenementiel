@@ -9,7 +9,8 @@
 </template>
 
 <script setup>
-// Static page for QR-only access.
+// Page statique affichée quand l’utilisateur n’a pas encore scanné de QR code.
+// Elle ne fait aucun appel API : elle sert uniquement de garde visuelle.
 </script>
 
 <style scoped>

@@ -5,6 +5,7 @@ const isWin = process.platform === 'win32'
 let exitRequested = false
 
 const killProcessTree = (child, signal = 'SIGTERM') => {
+  // Arrête aussi les processus enfants lancés par npm/vite/node.
   if (!child || child.killed || !child.pid) return
 
   if (isWin) {
@@ -22,12 +23,14 @@ const killProcessTree = (child, signal = 'SIGTERM') => {
 }
 
 const stopAll = (signal = 'SIGTERM') => {
+  // Coupe front + API ensemble pour éviter des ports laissés ouverts.
   for (const child of processes.values()) {
     killProcessTree(child, signal)
   }
 }
 
 const requestExit = (code = 0) => {
+  // Point de sortie unique : le premier process qui s’arrête coupe l’autre.
   if (exitRequested) return
   exitRequested = true
   stopAll('SIGTERM')
@@ -35,6 +38,7 @@ const requestExit = (code = 0) => {
 }
 
 const startProcess = ({ name, command, args }) => {
+  // Démarre un processus nommé et garde sa référence pour l’arrêt propre.
   const child = spawn(command, args, {
     stdio: 'inherit',
     shell: isWin,
@@ -60,6 +64,7 @@ const startProcess = ({ name, command, args }) => {
 }
 
 const main = () => {
+  // Lancement simultané de l’API Express et du serveur de développement Vite.
   startProcess({
     name: 'api',
     command: 'npm',

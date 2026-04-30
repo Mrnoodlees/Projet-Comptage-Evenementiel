@@ -4,9 +4,12 @@ import { bumpAccessVersion, getAccessVersion } from '../qrAccessVersion.js'
 
 const router = express.Router()
 
+// Routes historiques pour l’accès QR du dashboard.
+// Elles doublonnent en partie /api/admin/verify, mais restent utiles si le front les appelle.
 const shouldRevokeQrTokens = () => process.env.QR_RESET_REVOKE !== 'false'
 
 router.get('/verify', async (req, res) => {
+  // Vérifie un token QR admin depuis une URL publique.
   const token = req.query.token
 
   if (!token || typeof token !== 'string') {
@@ -25,10 +28,12 @@ router.get('/verify', async (req, res) => {
 })
 
 router.get('/version', (_req, res) => {
+  // Version d’accès courante pour invalider les anciennes sessions QR.
   return res.json({ version: getAccessVersion() })
 })
 
 router.post('/reset', async (_req, res) => {
+  // Reset manuel des accès QR liés à cette route.
   bumpAccessVersion()
   try {
     if (shouldRevokeQrTokens()) {

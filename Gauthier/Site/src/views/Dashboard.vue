@@ -3,12 +3,14 @@
   <QrOnly v-if="PUBLIC_MODE && !accessViaQr && !isCheckingAccess" />
 
   <!-- LOGIN -->
+  <!-- En mode privé, l’utilisateur doit se connecter avant de voir le dashboard. -->
   <Login
     v-else-if="!PUBLIC_MODE && !isAuthenticated && !isCheckingAccess"
     @success="handleLoginSuccess"
   />
 
   <!-- ADMIN -->
+  <!-- Le panneau admin est volontairement désactivé en mode public/VPS. -->
   <Admin
     v-else-if="isAdmin && !PUBLIC_MODE"
     :maxPeople="maxPeople"
@@ -21,6 +23,7 @@
   />
 
   <!-- DASHBOARD -->
+  <!-- Vue de supervision : elle sert à la fois au dashboard privé et au QR public. -->
   <div v-else class="dashboard">
     <header>
       <h1>Supervision – Comptage</h1>
@@ -93,23 +96,29 @@ import PassageHistory from '@/components/PassageHistory.vue'
 import QrOnly from '@/views/QrOnly.vue'
 
 /* ================== CONSTANTES ================== */
+// Clés de stockage navigateur utilisées pour garder un état local entre deux affichages.
 const STORAGE_COUNTERS = 'supervision_counters_v1'
 const STORAGE_CHART = 'supervision_chart_v1'
 const STORAGE_HISTORY = 'passage_history_v1'
+// URL du serveur Socket.IO et de l’API. Elles changent selon local/VPS.
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://178.32.107.35:3000'
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || SOCKET_URL.replace(':3000', ':3001')
+// Quand PUBLIC_MODE=true, on cache l’admin et on exige un accès QR.
 const PUBLIC_MODE = import.meta.env.VITE_PUBLIC_MODE === 'true'
 
 /* ================== AUTH ================== */
+// État d’accès courant : login classique ou QR token validé.
 const isAuthenticated = ref(false)
 const isAdmin = ref(false)
 const accessViaQr = ref(false)
 const QR_ACCESS_KEY = 'qr_access_v1'
 const QR_ACCESS_VERSION_KEY = 'qr_access_version'
+// Évite d’afficher le login ou le dashboard avant d’avoir vérifié le token QR.
 const isCheckingAccess = ref(true)
 
 /* ================== DATA ================== */
+// Données principales affichées dans les cartes.
 const people = ref(0)
 const entries = ref(0)
 const exits = ref(0)
@@ -120,6 +129,7 @@ const batteryStatus = ref('BATTERIE OK')
 const pmrPeople = ref(0)
 
 /* ================== REFS ================== */
+// Références vers les composants enfants pour pouvoir les piloter depuis cette vue.
 const chartRef = ref(null)
 const historyRef = ref(null)
 let socket = null
@@ -130,6 +140,8 @@ let refreshTimer = null
 const lastPassageByDoor = {}
 
 /* ================== PERSISTENCE ================== */
+// Ces fonctions sont gardées comme points d’extension si on veut réactiver
+// la persistance locale du dashboard. Aujourd’hui la BDD reste la source fiable.
 const loadCounters = () => {}
 
 const saveCounters = () => {}
@@ -139,6 +151,7 @@ const loadChart = () => {}
 const saveChart = () => {}
 
 /* ================== API ================== */
+// Petit wrapper pour centraliser les appels HTTP et remonter les erreurs API.
 const fetchJson = async (path, options = {}) => {
   const response = await fetch(`${API_BASE_URL}${path}`, options)
   if (!response.ok) {
@@ -148,6 +161,7 @@ const fetchJson = async (path, options = {}) => {
 }
 
 const hydrateFromApi = async () => {
+  // Premier chargement complet : compteurs, graphe, puis historique admin.
   try {
     const state = await fetchJson('/api/dashboard/state')
     if (state) {
@@ -171,6 +185,7 @@ const hydrateFromApi = async () => {
   }
 
   if (chartRef.value) {
+    // Reconstruit la courbe depuis les passages historiques stockés en BDD.
     try {
       const rows = await fetchJson('/api/dashboard/people-chart')
       chartRef.value.reset()
@@ -185,6 +200,7 @@ const hydrateFromApi = async () => {
   }
 
   if (historyRef.value) {
+    // L’historique n’est affiché qu’en mode privé/admin.
     try {
       const rows = await fetchJson('/api/passage?limit=100')
       historyRef.value.resetHistory()
@@ -207,6 +223,7 @@ const hydrateFromApi = async () => {
 }
 
 const refreshStateFromApi = async () => {
+  // Actualisation légère toutes les 5 secondes pour garder le dashboard cohérent.
   try {
     const state = await fetchJson('/api/dashboard/state')
     if (state) {
@@ -232,6 +249,7 @@ const refreshStateFromApi = async () => {
 const refreshChartFromApi = async () => {
   if (!chartRef.value) return
 
+  // Recalcule la courbe depuis l’API pour éviter une dérive côté navigateur.
   try {
     const rows = await fetchJson('/api/dashboard/people-chart')
     chartRef.value.reset()
@@ -247,6 +265,7 @@ const refreshChartFromApi = async () => {
 }
 
 const updateMaxPeople = async (value) => {
+  // La capacité maximale est sauvegardée côté API/BDD.
   maxPeople.value = Number(value)
   try {
     await fetchJson('/api/dashboard/max-people', {
@@ -259,8 +278,9 @@ const updateMaxPeople = async (value) => {
   }
 }
 
-/* ================== SOCKET ================== */
+/* ================== TOKEN QR ================== */
 const verifyAdminToken = async (token) => {
+  // Vérifie que le lien QR scanné correspond à un token actif en base.
   try {
     const response = await fetch(`${API_BASE_URL}/api/admin/verify?token=${encodeURIComponent(token)}`)
     if (!response.ok) return null
@@ -271,6 +291,7 @@ const verifyAdminToken = async (token) => {
 }
 
 const fetchAdminVersion = async () => {
+  // Permet d’invalider les anciennes sessions QR après un reset admin.
   try {
     const response = await fetch(`${API_BASE_URL}/api/admin/version`)
     if (!response.ok) return null
@@ -281,6 +302,7 @@ const fetchAdminVersion = async () => {
 }
 
 onMounted(async () => {
+  // 1. Récupère une éventuelle session QR déjà validée dans cet onglet.
   accessViaQr.value = sessionStorage.getItem(QR_ACCESS_KEY) === '1'
   if (accessViaQr.value) {
     isAuthenticated.value = true
@@ -289,6 +311,7 @@ onMounted(async () => {
   const params = new URLSearchParams(window.location.search)
   const token = params.get('admin_token')
   if (token) {
+    // 2. Si l’URL contient un token QR, on le valide côté API.
     const verifyResult = await verifyAdminToken(token)
     if (verifyResult?.ok) {
       accessViaQr.value = true
@@ -297,6 +320,7 @@ onMounted(async () => {
       isAuthenticated.value = true
     }
   } else if (accessViaQr.value) {
+    // 3. Si la session existait déjà, on vérifie qu’elle n’a pas été révoquée.
     const storedVersion = Number(sessionStorage.getItem(QR_ACCESS_VERSION_KEY) || '0')
     const versionResult = await fetchAdminVersion()
     if (!versionResult || storedVersion !== Number(versionResult.version)) {
@@ -313,6 +337,7 @@ onMounted(async () => {
   loadChart()
   await hydrateFromApi()
 
+  // 4. Branche le temps réel : l’API relaie les événements capteurs en Socket.IO.
   socket = io(SOCKET_URL)
 
   socket.on('connect', () => console.log('Socket connecté'))
@@ -338,6 +363,7 @@ onMounted(async () => {
   })
 
   refreshTimer = setInterval(() => {
+    // 5. Sécurité supplémentaire : polling périodique même si le socket rate un event.
     refreshStateFromApi()
     refreshChartFromApi()
   }, 5 * 1000)
@@ -353,6 +379,7 @@ onBeforeUnmount(() => {
 
 /* ================== LOGIN ================== */
 const handleLoginSuccess = () => {
+  // Le login classique donne accès au dashboard privé et donc au bouton Admin.
   isAuthenticated.value = true
   accessViaQr.value = false
   sessionStorage.removeItem(QR_ACCESS_KEY)
@@ -361,14 +388,17 @@ const handleLoginSuccess = () => {
 
 
 watch(accessViaQr, (value) => {
+  // Un accès QR ne doit jamais ouvrir le panneau admin.
   if (value) isAdmin.value = false
 })
 
 /* ================== PASSAGE HANDLER ================== */
 const handlePassage = (data) => {
+  // Les capteurs peuvent envoyer plusieurs phases : on ne compte que les passages terminés.
   const phase = data.type_passage ?? data.typePassage ?? data.phase
   if (phase && phase !== 'FIN') return
 
+  // Anti double comptage très court par porte/capteur.
   const now = Date.now()
   const doorId = data.appareil_id ?? data.capteur_id ?? data.capteur ?? data.id ?? 'UNKNOWN'
   if (!lastPassageByDoor[doorId]) lastPassageByDoor[doorId] = 0
@@ -379,6 +409,7 @@ const handlePassage = (data) => {
   const passageDate =
     data.date_heure ?? data.timestamp ?? data.ts ?? new Date().toISOString()
 
+  // Met à jour l’état instantané côté navigateur pour un retour temps réel.
   if (passageType === 'ENTREE') {
     entries.value++
     people.value++
@@ -400,6 +431,7 @@ const handlePassage = (data) => {
 
 /* ================== ADMIN ACTIONS ================== */
 const resetCounters = () => {
+  // Reset local de l’affichage ; la logique BDD peut être complétée côté API si besoin.
   people.value = 0
   entries.value = 0
   exits.value = 0
@@ -411,6 +443,7 @@ const resetCounters = () => {
 
 /* ================== GENERATEUR ADMIN ================== */
 const handleGeneratedPassage = (dataArray) => {
+  // Outil de simulation : injecte des passages côté front pour démonstration/test.
   dataArray.forEach((data, index) => {
     setTimeout(() => {
       handlePassage({
@@ -422,12 +455,14 @@ const handleGeneratedPassage = (dataArray) => {
 }
 
 /* ================== COMPUTED ================== */
+// Classes d’état utilisées pour colorer les pastilles du header.
 const statusBatteryClass = computed(() => ({
   ok: batteryStatus.value === 'BATTERIE OK',
   warn: batteryStatus.value === 'BATTERIE FAIBLE'
 }))
 
 const capacityIndicatorClass = computed(() => {
+  // Seuils de capacité : libre, quasi plein à 90%, plein à 100%.
   if (people.value >= maxPeople.value) return 'max'
   if (people.value >= maxPeople.value * 0.9) return 'quasi'
   return 'ok'
