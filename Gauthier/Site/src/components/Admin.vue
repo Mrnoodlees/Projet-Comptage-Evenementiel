@@ -134,6 +134,33 @@
         <p v-if="resetMessage" class="qr-expire">{{ resetMessage }}</p>
       </div>
 
+      <!-- Identifiants -->
+      <div class="card">
+        <h3>Identifiants</h3>
+        <p class="qr-hint">Créer un compte de connexion.</p>
+
+        <input
+          v-model="newUsername"
+          type="text"
+          placeholder="Utilisateur"
+          class="transparent-input"
+        />
+
+        <input
+          v-model="newPassword"
+          type="password"
+          placeholder="Mot de passe"
+          class="transparent-input"
+        />
+
+        <button class="admin-btn" @click="createUser" :disabled="createUserLoading">
+          {{ createUserLoading ? 'Création...' : 'Créer' }}
+        </button>
+
+        <p v-if="createUserError" class="qr-error">{{ createUserError }}</p>
+        <p v-if="createUserMessage" class="qr-expire">{{ createUserMessage }}</p>
+      </div>
+
     </section>
 
     <!-- ================= MODE ANALYSE ================= -->
@@ -242,6 +269,11 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || window.location.origin
 const PUBLIC_DASHBOARD_URL = 'http://178.32.107.35:5173'
 const isResettingAccess = ref(false)
 const resetMessage = ref('')
+const newUsername = ref('')
+const newPassword = ref('')
+const createUserLoading = ref(false)
+const createUserError = ref('')
+const createUserMessage = ref('')
 // Aggregated stats per door.
 const doorStats = ref([])
 const pmrSummary = ref(null)
@@ -346,6 +378,45 @@ const resetQrAccess = async () => {
     resetMessage.value = 'Échec du reset'
   } finally {
     isResettingAccess.value = false
+  }
+}
+
+const createUser = async () => {
+  createUserError.value = ''
+  createUserMessage.value = ''
+
+  const username = String(newUsername.value || '').trim()
+  const password = String(newPassword.value || '')
+
+  if (!username || !password) {
+    createUserError.value = 'Utilisateur et mot de passe requis'
+    return
+  }
+
+  createUserLoading.value = true
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/admin/users`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    })
+
+    if (response.status === 409) {
+      createUserError.value = 'Utilisateur déjà existant'
+      return
+    }
+
+    if (!response.ok) {
+      createUserError.value = 'Impossible de créer l’utilisateur'
+      return
+    }
+
+    createUserMessage.value = 'Identifiant créé'
+    newPassword.value = ''
+  } catch {
+    createUserError.value = 'Impossible de créer l’utilisateur'
+  } finally {
+    createUserLoading.value = false
   }
 }
 

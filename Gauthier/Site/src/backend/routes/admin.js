@@ -1,6 +1,7 @@
 import express from 'express'
 import { pool } from '../db.js'
 import { upsertDoorSetting } from '../doorSettings.js'
+import { hashPassword } from '../auth.js'
 import { createQrToken, verifyQrToken, resetQrTokens, listQrTokens } from '../qrTokens.js'
 import { bumpAccessVersion, getAccessVersion } from '../qrAccessVersion.js'
 
@@ -72,6 +73,38 @@ router.post('/door-pmr', async (req, res) => {
     return res.json({ ok: true })
   } catch (err) {
     return res.status(500).json({ message: 'Impossible de mettre à jour la porte.' })
+  }
+})
+
+router.post('/users', async (req, res) => {
+  const { username, password } = req.body || {}
+
+  if (!username || !password) {
+    return res.status(400).json({ message: 'Identifiants manquants' })
+  }
+
+  const normalizedUsername = String(username).trim()
+  if (!normalizedUsername) {
+    return res.status(400).json({ message: 'Utilisateur invalide' })
+  }
+
+  try {
+    const existing = await pool.query(
+      'SELECT id FROM login WHERE username = $1 LIMIT 1',
+      [normalizedUsername]
+    )
+    if (existing.rows.length > 0) {
+      return res.status(409).json({ message: 'Utilisateur déjà existant' })
+    }
+
+    const hashed = hashPassword(String(password))
+    const insert = await pool.query(
+      'INSERT INTO login (username, mdp) VALUES ($1, $2) RETURNING id, username',
+      [normalizedUsername, hashed]
+    )
+    return res.status(201).json(insert.rows[0])
+  } catch (err) {
+    return res.status(500).json({ message: 'Impossible de créer l’utilisateur.' })
   }
 })
 
