@@ -1,0 +1,18 @@
+[Unit]
+# Service Linux pour garder l’API lancée en production.
+Description=Comptage API
+After=network.target
+
+[Service]
+# Dossier du projet sur la machine de production.
+WorkingDirectory=/home/gauthier/Documents/GitHub/Projet-Comptage-Evenementiel/Gauthier/Site
+# Lance uniquement l’API Node, pas le serveur Vite de développement.
+ExecStart=/usr/bin/node src/backend/index.js
+# Redémarre automatiquement si l’API tombe.
+Restart=always
+RestartSec=3
+Environment=NODE_ENV=production
+
+[Install]
+# Démarrage automatique avec le système.
+WantedBy=multi-user.target
